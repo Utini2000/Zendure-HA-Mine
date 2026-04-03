@@ -1269,7 +1269,7 @@ automation:
     max_exceeded: silent
     triggers:
       - trigger: time_pattern
-        seconds: "/5"
+        seconds: "/2"
       - trigger: numeric_state
         entity_id: sensor.shellypro3em_9454c5b9b340_total_active_power
         above: 150
@@ -1362,11 +1362,11 @@ automation:
           time_since_1: "{{ as_timestamp(now()) - last_sent_1_ts }}"
           time_since_2: "{{ as_timestamp(now()) - last_sent_2_ts }}"
 
-          ack_pending_1: "{{ time_since_1 < 8 and s1_out_val >= 0 and s1_out_val != s1_base }}"
-          drift_recovery_1: "{{ time_since_1 >= 8 and time_since_1 < 60 and s1_out_val >= 0 and s1_out_val != s1_base }}"
+          ack_pending_1: "{{ time_since_1 < 5 and s1_out_val >= 0 and s1_out_val != s1_base }}"
+          drift_recovery_1: "{{ time_since_1 >= 5 and time_since_1 < 30 and s1_out_val >= 0 and s1_out_val != s1_base }}"
 
-          ack_pending_2: "{{ time_since_2 < 8 and s2_out_val >= 0 and s2_out_val != s2_base }}"
-          drift_recovery_2: "{{ time_since_2 >= 8 and time_since_2 < 60 and s2_out_val >= 0 and s2_out_val != s2_base }}"
+          ack_pending_2: "{{ time_since_2 < 5 and s2_out_val >= 0 and s2_out_val != s2_base }}"
+          drift_recovery_2: "{{ time_since_2 >= 5 and time_since_2 < 30 and s2_out_val >= 0 and s2_out_val != s2_base }}"
 
           soc_off: "{{ states('input_number.zendure_conf_soc_off') | int(20) }}"
           hysteresis: "{{ states('input_number.zendure_conf_hysteresis') | int(10) }}"
@@ -1454,6 +1454,7 @@ automation:
 
 
           grid: "{{ (states('sensor.shellypro3em_9454c5b9b340_total_active_power') | float(0)) if shelly_ok | bool else 0 }}"
+          hysteresis_dynamic: "{{ [hysteresis|int(0), ((grid|float(0)|abs) * 0.08)|int(0), 6] | max }}"
           stale_force_zero_u1: "{{ (not s1_fresh|bool) and (s1_base|int(0) > 0) and ((grid|float(0)) < -80) }}"
           stale_force_zero_u2: "{{ (not s2_fresh|bool) and (s2_base|int(0) > 0) and ((grid|float(0)) < -80) }}"
           actual_1: "{{ states('sensor.solarflow_1_output_power') | float(0) if s1_ok | bool else 0 }}"
@@ -1489,7 +1490,7 @@ automation:
              or drift_recovery_2
              or states('input_text.zendure_ac_mode_u1') != 'Output mode'
              or states('input_text.zendure_ac_mode_u2') != 'Output mode'
-             or ((delta_effective | int(0) | abs) > (hysteresis | int(0)))
+             or ((delta_effective | int(0) | abs) > (hysteresis_dynamic | int(0)))
              or (actual_total | int(0) > global_max | int(0))
              or ((grid | float(0)) < -40)
              or rebalance_needed }}
