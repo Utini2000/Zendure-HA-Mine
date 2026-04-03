@@ -17,6 +17,14 @@ telegram_id2: "notify.telegram_bot_..."
 power_meter_total_consumption: "sensor.<dein_power_meter_total>"
 zendure_gridoffmode_entity_u1: "select.<dein_u1_gridoffmode_entity>"
 zendure_gridoffmode_entity_u2: "select.<dein_u2_gridoffmode_entity>"
+zendure_topic_battery1_sensor_power: "Zendure/sensor/<batt1_sn>/<batt1_sn>_power"
+zendure_topic_battery1_sensor_maxTemp: "Zendure/sensor/<batt1_sn>/<batt1_sn>_maxTemp"
+zendure_topic_battery1_sensor_maxVol: "Zendure/sensor/<batt1_sn>/<batt1_sn>_maxVol"
+zendure_topic_battery1_sensor_minVol: "Zendure/sensor/<batt1_sn>/<batt1_sn>_minVol"
+zendure_topic_battery2_sensor_power: "Zendure/sensor/<batt2_sn>/<batt2_sn>_power"
+zendure_topic_battery2_sensor_maxTemp: "Zendure/sensor/<batt2_sn>/<batt2_sn>_maxTemp"
+zendure_topic_battery2_sensor_maxVol: "Zendure/sensor/<batt2_sn>/<batt2_sn>_maxVol"
+zendure_topic_battery2_sensor_minVol: "Zendure/sensor/<batt2_sn>/<batt2_sn>_minVol"
 ```
 
 ## Schritt 2: HA prüfen
