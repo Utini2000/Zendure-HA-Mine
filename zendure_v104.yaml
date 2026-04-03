@@ -56,6 +56,9 @@ input_text:
     name: "Intern: AC Mode U1"
   zendure_ac_mode_u2:
     name: "Intern: AC Mode U2"
+  zendure_power_meter_total_consumption:
+    name: "Zendure: Power Meter Entity"
+    initial: !secret power_meter_total_consumption
 
 input_datetime:
   zendure_last_full_charge_1:
@@ -820,7 +823,7 @@ script:
         data: { value: 0 }
       - action: notify.send_message
         target:
-          entity_id: notify.telegram_bot_7641992449_1002564762519
+          entity_id: !secret telegram_id1
         data:
           message: "🛠️ *Manuelle Notladung U1*\nGestartet (Input mode, InputLimit {{ limit_emerg_u1|int }}W)."
 
@@ -861,7 +864,7 @@ script:
         data: { value: 0 }
       - action: notify.send_message
         target:
-          entity_id: notify.telegram_bot_7641992449_1002564762519
+          entity_id: !secret telegram_id1
         data:
           message: "🛠️ *Manuelle Notladung U2*\nGestartet (Input mode, InputLimit {{ limit_emerg_u2|int }}W)."
 
@@ -893,7 +896,7 @@ script:
                   {% set last = states('input_number.zendure_last_sent_1')|int(0) %}
                   {% set s = states.sensor.solarflow_1_status_raw %}
                   {% set online = s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] %}
-                  {% set fresh = (as_timestamp(now()) - as_timestamp(s.last_reported, default=0)) < 120 %}
+                  {% set fresh = (as_timestamp(now()) - as_timestamp(s.last_reported, default=0)) < 180 %}
                   {{ online and fresh and last > 0 }}
             then:
               - action: input_number.set_value
@@ -928,7 +931,7 @@ script:
                   {% set last = states('input_number.zendure_last_sent_2')|int(0) %}
                   {% set s = states.sensor.solarflow_2_status_raw %}
                   {% set online = s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] %}
-                  {% set fresh = (as_timestamp(now()) - as_timestamp(s.last_reported, default=0)) < 120 %}
+                  {% set fresh = (as_timestamp(now()) - as_timestamp(s.last_reported, default=0)) < 180 %}
                   {{ online and fresh and last > 0 }}
             then:
               - action: input_number.set_value
@@ -1269,14 +1272,16 @@ automation:
     max_exceeded: silent
     triggers:
       - trigger: time_pattern
-        seconds: "/5"
-      - trigger: numeric_state
-        entity_id: sensor.shellypro3em_9454c5b9b340_total_active_power
-        above: 150
+        seconds: "/2"
+      - trigger: template
+        value_template: >
+          {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
+          {{ meter|length > 0 and (states(meter) | float(0)) > 150 }}
         for: "00:00:01"
-      - trigger: numeric_state
-        entity_id: sensor.shellypro3em_9454c5b9b340_total_active_power
-        below: -30
+      - trigger: template
+        value_template: >
+          {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
+          {{ meter|length > 0 and (states(meter) | float(0)) < -30 }}
         for: "00:00:01"
       - trigger: state
         entity_id:
@@ -1300,8 +1305,9 @@ automation:
           - stop: "Auto Mode is OFF - Loop aborted."
 
       - variables:
+          power_meter_entity: "{{ states('input_text.zendure_power_meter_total_consumption') }}"
           shelly_ok: >-
-            {% set s = states.sensor.shellypro3em_9454c5b9b340_total_active_power %}
+            {% set s = states.get(power_meter_entity) %}
             {% set val = s.state if s is not none else 'unknown' %}
             {% set ts_reported = as_timestamp(s.last_reported, 0) if s is not none and s.last_reported is defined else 0 %}
             {% set ts_changed = as_timestamp(s.last_changed, 0) if s is not none else 0 %}
@@ -1362,11 +1368,11 @@ automation:
           time_since_1: "{{ as_timestamp(now()) - last_sent_1_ts }}"
           time_since_2: "{{ as_timestamp(now()) - last_sent_2_ts }}"
 
-          ack_pending_1: "{{ time_since_1 < 8 and s1_out_val >= 0 and s1_out_val != s1_base }}"
-          drift_recovery_1: "{{ time_since_1 >= 8 and time_since_1 < 60 and s1_out_val >= 0 and s1_out_val != s1_base }}"
+          ack_pending_1: "{{ time_since_1 < 5 and s1_out_val >= 0 and s1_out_val != s1_base }}"
+          drift_recovery_1: "{{ time_since_1 >= 5 and time_since_1 < 30 and s1_out_val >= 0 and s1_out_val != s1_base }}"
 
-          ack_pending_2: "{{ time_since_2 < 8 and s2_out_val >= 0 and s2_out_val != s2_base }}"
-          drift_recovery_2: "{{ time_since_2 >= 8 and time_since_2 < 60 and s2_out_val >= 0 and s2_out_val != s2_base }}"
+          ack_pending_2: "{{ time_since_2 < 5 and s2_out_val >= 0 and s2_out_val != s2_base }}"
+          drift_recovery_2: "{{ time_since_2 >= 5 and time_since_2 < 30 and s2_out_val >= 0 and s2_out_val != s2_base }}"
 
           soc_off: "{{ states('input_number.zendure_conf_soc_off') | int(20) }}"
           hysteresis: "{{ states('input_number.zendure_conf_hysteresis') | int(10) }}"
@@ -1453,12 +1459,17 @@ automation:
           safety_override: "{{ override_u1 or override_u2 }}"
 
 
-          grid: "{{ (states('sensor.shellypro3em_9454c5b9b340_total_active_power') | float(0)) if shelly_ok | bool else 0 }}"
+          grid: "{{ (states(power_meter_entity) | float(0)) if shelly_ok | bool else 0 }}"
           stale_force_zero_u1: "{{ (not s1_fresh|bool) and (s1_base|int(0) > 0) and ((grid|float(0)) < -80) }}"
           stale_force_zero_u2: "{{ (not s2_fresh|bool) and (s2_base|int(0) > 0) and ((grid|float(0)) < -80) }}"
           actual_1: "{{ states('sensor.solarflow_1_output_power') | float(0) if s1_ok | bool else 0 }}"
           actual_2: "{{ states('sensor.solarflow_2_output_power') | float(0) if s2_ok | bool else 0 }}"
           actual_total: "{{ (actual_1 | int(0)) + (actual_2 | int(0)) }}"
+
+          busy_actual_1: "{{ actual_1 | int(0) if busy_u1 | bool else 0 }}"
+          busy_actual_2: "{{ actual_2 | int(0) if busy_u2 | bool else 0 }}"
+          busy_actual_total: "{{ (busy_actual_1 | int(0)) + (busy_actual_2 | int(0)) }}"
+
           cmd_total: "{{ (s1_base|int(0)) + (s2_base|int(0)) }}"
           cmd_lag: "{{ (actual_total|int(0)) > ((cmd_total|int(0)) + 120) }}"
           export_persist: "{{ (grid|float(0)) < -100 }}"
@@ -1495,10 +1506,10 @@ automation:
              or rebalance_needed }}
 
       - variables:
-          target_online: "{{ [[(target_total|int(0) - ghost_total|int(0)), 0]|max, available_capacity|int(0)]|min }}"
+          target_online: "{{ [[(target_total|int(0) - ghost_total|int(0) - busy_actual_total|int(0)), 0]|max, available_capacity|int(0)]|min }}"
 
-          active_1: "{{ s1_ok | bool }}"
-          active_2: "{{ s2_ok | bool }}"
+          active_1: "{{ s1_ok | bool and not (busy_u1 | bool) }}"
+          active_2: "{{ s2_ok | bool and not (busy_u2 | bool) }}"
 
           weight_1_base: >-
             {% if soc1_valid and soc2_valid and (soc1_val + soc2_val) > 0 %}
@@ -2029,7 +2040,7 @@ automation:
                     data: { value: 0 }
                   - action: notify.send_message
                     target:
-                      entity_id: notify.telegram_bot_7641992449_1002564762519
+                      entity_id: !secret telegram_id1
                     data:
                       message: >
                         📉 *Sicherheits-Kalibrierung U1 (Tag)*
@@ -2064,7 +2075,7 @@ automation:
                     data: { value: 0 }
                   - action: notify.send_message
                     target:
-                      entity_id: notify.telegram_bot_7641992449_1002564762519
+                      entity_id: !secret telegram_id1
                     data:
                       message: >
                         📉 *Spannungseinbruch U1 (Nacht)*
@@ -2185,7 +2196,7 @@ automation:
                     data: { value: 0 }
                   - action: notify.send_message
                     target:
-                      entity_id: notify.telegram_bot_7641992449_1002564762519
+                      entity_id: !secret telegram_id1
                     data:
                       message: >
                         📉 *Sicherheits-Kalibrierung U2 (Tag)*
@@ -2220,7 +2231,7 @@ automation:
                     data: { value: 0 }
                   - action: notify.send_message
                     target:
-                      entity_id: notify.telegram_bot_7641992449_1002564762519
+                      entity_id: !secret telegram_id1
                     data:
                       message: >
                         📉 *Spannungseinbruch U2 (Nacht)*
@@ -2482,7 +2493,7 @@ automation:
                 target: { entity_id: input_boolean.zendure_force_calib_u1 }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: >
                     🧭 *Calibration U1 scheduled for tomorrow 13:00*
@@ -2498,7 +2509,7 @@ automation:
                 target: { entity_id: input_boolean.zendure_force_calib_u2 }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: >
                     🧭 *Calibration U2 scheduled for tomorrow 13:00*
@@ -2678,7 +2689,7 @@ automation:
             data: { value: 0 }
           - action: notify.send_message
             target:
-              entity_id: notify.telegram_bot_7641992449_1002564762519
+              entity_id: !secret telegram_id1
             data:
               message: >
                 {% if force_u1 %}
@@ -2755,7 +2766,7 @@ automation:
             data: { value: 0 }
           - action: notify.send_message
             target:
-              entity_id: notify.telegram_bot_7641992449_1002564762519
+              entity_id: !secret telegram_id1
             data:
               message: >
                 {% if force_u2 %}
@@ -2797,7 +2808,7 @@ automation:
                 target: { entity_id: input_boolean.zendure_force_calib_u1 }
           - action: notify.send_message
             target:
-              entity_id: notify.telegram_bot_7641992449_1002564762519
+              entity_id: !secret telegram_id1
             data:
               message: >
                 {% if trigger.id == 'stop_u1' %}
@@ -2840,7 +2851,7 @@ automation:
                 target: { entity_id: input_boolean.zendure_force_calib_u2 }
           - action: notify.send_message
             target:
-              entity_id: notify.telegram_bot_7641992449_1002564762519
+              entity_id: !secret telegram_id1
             data:
               message: >
                 {% if trigger.id == 'stop_u2' %}
@@ -2870,7 +2881,7 @@ automation:
           imb2_raw: "{{ states('sensor.solarflow_2_cell_imbalance') }}"
       - action: notify.send_message
         target:
-          entity_id: notify.telegram_bot_7641992449_1002564762519
+          entity_id: !secret telegram_id1
         data:
           message: |
             ℹ️ *Zendure Wochenbericht*
@@ -2960,7 +2971,11 @@ automation:
                   - condition: template
                     value_template: >
                       {{ calib1 and online1 and soc1 < 100 and s1_solar >= (pv_high|float(70))
-                         and states('input_text.zendure_ac_mode_u1') != 'Output mode' }}
+                      and (
+                          states('input_text.zendure_ac_mode_u1') != 'Output mode'
+                          or states('sensor.solarflow_1_output_limit')|int(-1) != 0
+                          or states('input_number.zendure_last_sent_1')|int(-1) != 0
+                      ) }}
                 sequence:
                   - action: input_text.set_value
                     target: { entity_id: input_text.zendure_ac_mode_u1 }
@@ -3001,7 +3016,11 @@ automation:
                   - condition: template
                     value_template: >
                       {{ calib2 and online2 and soc2 < 100 and s2_solar >= (pv_high|float(70))
-                         and states('input_text.zendure_ac_mode_u2') != 'Output mode' }}
+                      and (
+                          states('input_text.zendure_ac_mode_u2') != 'Output mode'
+                          or states('sensor.solarflow_2_output_limit')|int(-1) != 0
+                          or states('input_number.zendure_last_sent_2')|int(-1) != 0
+                      ) }}
                 sequence:
                   - action: input_text.set_value
                     target: { entity_id: input_text.zendure_ac_mode_u2 }
@@ -3091,7 +3110,7 @@ automation:
                 data: { value: 0 }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: "🔋 *VGuard→Emergency U1*\nKritischer Low-SoC erkannt, VGuard freigegeben und Notladung mit {{ limit_emerg_u1|int }}W gestartet."
           - conditions:
@@ -3142,7 +3161,7 @@ automation:
                 data: { value: 0 }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: "🔋 *VGuard→Emergency U2*\nKritischer Low-SoC erkannt, VGuard freigegeben und Notladung mit {{ limit_emerg_u2|int }}W gestartet."
 
@@ -3405,7 +3424,7 @@ automation:
                 data: { value: 0 }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: "🔋 *Zendure Notladung (Unit 1)*\nSofortstart nach HA-Neustart (kritischer Low-SoC erkannt)."
 
@@ -3432,7 +3451,7 @@ automation:
                 data: { value: 0 }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: "🔋 *Zendure Notladung (Unit 1)*\nGestartet (SoC < Limit oder Spannung <= 3.05V / Hard-Floor <= 3.00V)."
 
@@ -3457,7 +3476,7 @@ automation:
                 data: { value: 0 }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: >
                     {% set bt = states.sensor.solarflow_1_batt_max_temp %}
@@ -3517,7 +3536,7 @@ automation:
                 data: { value: 0 }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: "🔋 *Zendure Notladung (Unit 2)*\nSofortstart nach HA-Neustart (kritischer Low-SoC erkannt)."
 
@@ -3544,7 +3563,7 @@ automation:
                 data: { value: 0 }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: "🔋 *Zendure Notladung (Unit 2)*\nGestartet (SoC < Limit oder Spannung <= 3.05V / Hard-Floor <= 3.00V)."
 
@@ -3569,7 +3588,7 @@ automation:
                 data: { value: 0 }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: >
                     {% set bt = states.sensor.solarflow_2_batt_max_temp %}
@@ -3684,7 +3703,8 @@ automation:
       - trigger: template
         id: "shelly_fail"
         value_template: >-
-          {% set s = states.sensor.shellypro3em_9454c5b9b340_total_active_power %}
+          {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
+          {% set s = states.get(meter) %}
           {% set val = s.state if s is not none else 'unknown' %}
           {% set ts_reported = as_timestamp(s.last_reported, 0) if s is not none and s.last_reported is defined else 0 %}
           {% set ts_changed = as_timestamp(s.last_changed, 0) if s is not none else 0 %}
@@ -3694,7 +3714,8 @@ automation:
       - trigger: template
         id: "shelly_ok"
         value_template: >-
-          {% set s = states.sensor.shellypro3em_9454c5b9b340_total_active_power %}
+          {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
+          {% set s = states.get(meter) %}
           {% set val = s.state if s is not none else 'unknown' %}
           {% set ts_reported = as_timestamp(s.last_reported, 0) if s is not none and s.last_reported is defined else 0 %}
           {% set ts_changed = as_timestamp(s.last_changed, 0) if s is not none else 0 %}
@@ -3743,7 +3764,7 @@ automation:
             sequence:
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: "⚠️ *Zendure Warnung*\nUnit 1 ist offline/nicht erreichbar."
           - conditions:
@@ -3752,7 +3773,7 @@ automation:
             sequence:
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: "⚠️ *Zendure Warnung*\nUnit 2 ist offline/nicht erreichbar."
 
@@ -3762,7 +3783,7 @@ automation:
             sequence:
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: "❌ *Zendure Fehler*\nUnit 1 meldet Fehlerstatus (FAULT/ERROR)!"
           - conditions:
@@ -3771,7 +3792,7 @@ automation:
             sequence:
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: "❌ *Zendure Fehler*\nUnit 2 meldet Fehlerstatus (FAULT/ERROR)!"
 
@@ -3868,7 +3889,7 @@ automation:
             sequence:
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002685669648
+                  entity_id: !secret telegram_id2
                 data:
                   message: >
                     Der PV Speicher ({{ soc | round(0) }}%) wird heute um **{{ full_time }} Uhr** voll sein.
@@ -3881,7 +3902,7 @@ automation:
             sequence:
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002685669648
+                  entity_id: !secret telegram_id2
                 data:
                   message: >
                     Die PV Energie reicht, um den Akku ({{ soc | round(0) }}%) heute bis {{ target_soc }}% zu laden.
@@ -3906,7 +3927,7 @@ automation:
     actions:
       - action: notify.send_message
         target:
-          entity_id: notify.telegram_bot_7641992449_1002564762519
+          entity_id: !secret telegram_id1
         data:
           message: >
             🔥 *Zendure Temperatur-Warnung!*
@@ -3970,7 +3991,7 @@ automation:
                   qos: 1
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: >
                     🚨 *ACHTUNG: STROMAUSFALL!*
@@ -4001,7 +4022,7 @@ automation:
                   qos: 1
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: >
                     ✅ *STROM WIEDER DA!*
@@ -4041,7 +4062,7 @@ automation:
                 data: { value: "Input mode" }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: >
                     ℹ️ *AC-Reconcile U1 übersprungen (Schutzladung erkannt)*\n
@@ -4080,7 +4101,7 @@ automation:
                   qos: 1
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: >
                     ⚠️ *AC-Mode war falsch (U1) – Re-Sync ausgeführt*\n
@@ -4106,7 +4127,7 @@ automation:
                 data: { value: "Input mode" }
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: >
                     ℹ️ *AC-Reconcile U2 übersprungen (Schutzladung erkannt)*\n
@@ -4145,7 +4166,7 @@ automation:
                   qos: 1
               - action: notify.send_message
                 target:
-                  entity_id: notify.telegram_bot_7641992449_1002564762519
+                  entity_id: !secret telegram_id1
                 data:
                   message: >
                     ⚠️ *AC-Mode war falsch (U2) – Re-Sync ausgeführt*\n
