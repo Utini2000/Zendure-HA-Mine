@@ -1279,15 +1279,13 @@ automation:
     triggers:
       - trigger: time_pattern
         seconds: "/2"
-      - trigger: template
-        value_template: >
-          {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
-          {{ meter|length > 0 and (states(meter) | float(0)) > 150 }}
+      - trigger: numeric_state
+        entity_id: !secret power_meter_total_consumption
+        above: 150
         for: "00:00:01"
-      - trigger: template
-        value_template: >
-          {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
-          {{ meter|length > 0 and (states(meter) | float(0)) < -30 }}
+      - trigger: numeric_state
+        entity_id: !secret power_meter_total_consumption
+        below: -30
         for: "00:00:01"
       - trigger: state
         entity_id:
@@ -1315,7 +1313,8 @@ automation:
           shelly_ok: >-
             {% set meter = power_meter_entity %}
             {% set val = states(meter) if meter|length > 0 else 'unknown' %}
-            {{ meter|length > 0 and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) }}
+            {% set age = (as_timestamp(now()) - as_timestamp(states[meter].last_changed, 0)) if meter in states else 9999 %}
+            {{ meter|length > 0 and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) and age < 25 }}
 
           s1_fresh: >-
             {% set stat = states.sensor.solarflow_1_status_raw %}
@@ -1450,7 +1449,7 @@ automation:
 
           zen_mode: "{{ (bypass1 or bypass2) }}"
           slider_change: "{{ states('input_number.zendure_conf_min_change') | int(5) }}"
-          min_change: "{{ (slider_change * 4) if zen_mode else slider_change }}"
+          min_change: "{{ slider_change }}"
 
           override_margin: "{{ [min_change|int(0), 10] | max }}"
           spillover_override: "{{ (floor_1|int(0) > (s1_base|int(0) + override_margin|int(0))) or (floor_2|int(0) > (s2_base|int(0) + override_margin|int(0))) }}"
@@ -1468,10 +1467,6 @@ automation:
           actual_1: "{{ states('sensor.solarflow_1_output_power') | float(0) if s1_ok | bool else 0 }}"
           actual_2: "{{ states('sensor.solarflow_2_output_power') | float(0) if s2_ok | bool else 0 }}"
           actual_total: "{{ (actual_1 | int(0)) + (actual_2 | int(0)) }}"
-
-          busy_actual_1: "{{ actual_1 | int(0) if busy_u1 | bool else 0 }}"
-          busy_actual_2: "{{ actual_2 | int(0) if busy_u2 | bool else 0 }}"
-          busy_actual_total: "{{ (busy_actual_1 | int(0)) + (busy_actual_2 | int(0)) }}"
 
           cmd_total: "{{ (s1_base|int(0)) + (s2_base|int(0)) }}"
           cmd_lag: "{{ (actual_total|int(0)) > ((cmd_total|int(0)) + 120) }}"
@@ -3708,14 +3703,16 @@ automation:
         value_template: >-
           {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
           {% set val = states(meter) if meter|length > 0 else 'unknown' %}
-          {{ not (meter|length > 0 and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val)) }}
+          {% set age = (as_timestamp(now()) - as_timestamp(states[meter].last_changed, 0)) if meter in states else 9999 %}
+          {{ not (meter|length > 0 and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) and age < 25) }}
         for: "00:00:30"
       - trigger: template
         id: "shelly_ok"
         value_template: >-
           {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
           {% set val = states(meter) if meter|length > 0 else 'unknown' %}
-          {{ meter|length > 0 and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) }}
+          {% set age = (as_timestamp(now()) - as_timestamp(states[meter].last_changed, 0)) if meter in states else 9999 %}
+          {{ meter|length > 0 and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) and age < 25 }}
         for: "00:01:00"
 
       - trigger: state
