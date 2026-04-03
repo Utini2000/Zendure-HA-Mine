@@ -1503,7 +1503,7 @@ automation:
              or drift_recovery_2
              or states('input_text.zendure_ac_mode_u1') != 'Output mode'
              or states('input_text.zendure_ac_mode_u2') != 'Output mode'
-             or ((delta_effective | int(0) | abs) > (hysteresis | int(0)))
+             or ((delta_effective | int(0) | abs) > (hysteresis_dynamic | int(0)))
              or (actual_total | int(0) > global_max | int(0))
              or ((grid | float(0)) < -40)
              or rebalance_needed }}
