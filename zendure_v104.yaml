@@ -1312,23 +1312,26 @@ automation:
           power_meter_entity: "{{ states('input_text.zendure_power_meter_total_consumption') }}"
           shelly_ok: >-
             {% set meter = power_meter_entity %}
-            {% set val = states(meter) if meter|length > 0 else 'unknown' %}
-            {% set age = (as_timestamp(now()) - as_timestamp(states[meter].last_changed, 0)) if meter in states else 9999 %}
-            {{ meter|length > 0 and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) and age < 25 }}
+            {% set s = (expand(meter) | first) if meter|length > 0 else none %}
+            {% set val = s.state if s is not none else 'unknown' %}
+            {% set ts_reported = as_timestamp(s.last_reported, 0) if s is not none and s.last_reported is defined else 0 %}
+            {% set ts_changed = as_timestamp(s.last_changed, 0) if s is not none else 0 %}
+            {% set fresh = (as_timestamp(now()) - ts_reported) < 25 or (as_timestamp(now()) - ts_changed) < 25 %}
+            {{ s is not none and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) and fresh }}
 
           s1_fresh: >-
             {% set stat = states.sensor.solarflow_1_status_raw %}
             {% set age = (as_timestamp(now()) - as_timestamp(stat.last_reported, 0)) if stat is not none else 9999 %}
             {{ stat is not none
                and stat.state|upper not in ['UNAVAILABLE', 'UNKNOWN', 'FAULT', 'ERROR']
-               and age < 120 }}
+               and age < 180 }}
 
           s2_fresh: >-
             {% set stat = states.sensor.solarflow_2_status_raw %}
             {% set age = (as_timestamp(now()) - as_timestamp(stat.last_reported, 0)) if stat is not none else 9999 %}
             {{ stat is not none
                and stat.state|upper not in ['UNAVAILABLE', 'UNKNOWN', 'FAULT', 'ERROR']
-               and age < 120 }}
+               and age < 180 }}
 
           v1_min_ok: "{{ has_value('sensor.solarflow_1_cell_min_vol') }}"
           v2_min_ok: "{{ has_value('sensor.solarflow_2_cell_min_vol') }}"
@@ -3702,17 +3705,23 @@ automation:
         id: "shelly_fail"
         value_template: >-
           {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
-          {% set val = states(meter) if meter|length > 0 else 'unknown' %}
-          {% set age = (as_timestamp(now()) - as_timestamp(states[meter].last_changed, 0)) if meter in states else 9999 %}
-          {{ not (meter|length > 0 and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) and age < 25) }}
+          {% set s = (expand(meter) | first) if meter|length > 0 else none %}
+          {% set val = s.state if s is not none else 'unknown' %}
+          {% set ts_reported = as_timestamp(s.last_reported, 0) if s is not none and s.last_reported is defined else 0 %}
+          {% set ts_changed = as_timestamp(s.last_changed, 0) if s is not none else 0 %}
+          {% set fresh = (as_timestamp(now()) - ts_reported) < 25 or (as_timestamp(now()) - ts_changed) < 25 %}
+          {{ not (s is not none and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) and fresh) }}
         for: "00:00:30"
       - trigger: template
         id: "shelly_ok"
         value_template: >-
           {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
-          {% set val = states(meter) if meter|length > 0 else 'unknown' %}
-          {% set age = (as_timestamp(now()) - as_timestamp(states[meter].last_changed, 0)) if meter in states else 9999 %}
-          {{ meter|length > 0 and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) and age < 25 }}
+          {% set s = (expand(meter) | first) if meter|length > 0 else none %}
+          {% set val = s.state if s is not none else 'unknown' %}
+          {% set ts_reported = as_timestamp(s.last_reported, 0) if s is not none and s.last_reported is defined else 0 %}
+          {% set ts_changed = as_timestamp(s.last_changed, 0) if s is not none else 0 %}
+          {% set fresh = (as_timestamp(now()) - ts_reported) < 25 or (as_timestamp(now()) - ts_changed) < 25 %}
+          {{ s is not none and val|upper not in ['UNAVAILABLE','UNKNOWN','NONE'] and is_number(val) and fresh }}
         for: "00:01:00"
 
       - trigger: state
