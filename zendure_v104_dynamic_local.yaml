@@ -362,6 +362,30 @@ script:
               total_target_w: "{{ target | int(0) }}"
 
 automation:
+  - alias: "Zendure: Dynamic/Base Mode Arbitration"
+    id: "zendure_dynamic_base_mode_arbitration"
+    mode: restart
+    initial_state: true
+    triggers:
+      - trigger: homeassistant
+        event: start
+      - trigger: state
+        entity_id: input_boolean.zendure_dynamic_mode
+        to: "on"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.zendure_dynamic_mode
+        state: "on"
+    actions:
+      - if:
+          - condition: state
+            entity_id: input_boolean.zendure_auto_mode
+            state: "on"
+        then:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.zendure_auto_mode
+
   - alias: "Zendure: Dynamic Registry Bootstrap Discovery"
     id: "zendure_dynamic_registry_bootstrap_discovery"
     mode: queued

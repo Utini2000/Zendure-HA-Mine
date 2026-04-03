@@ -258,3 +258,16 @@ Für maximale Genauigkeit wurde die Dynamic-Extension jetzt so angepasst:
   - bei ruhiger Lage greift dein eingestellter Basiswert.
 
 Damit bleibt die Steuerung schnell/präzise bei echten Laständerungen, ohne bei Rauschen unnötig viele MQTT-Updates zu erzeugen.
+
+## Wichtiger Betriebsmodus-Hinweis (Hardcoded v104 vs Dynamic Layer)
+
+- Ja, die hardcodierten Seriennummern in `zendure_v104.yaml` bleiben technisch vorhanden.
+- Sie müssen **nicht** automatisch in die Basisdatei geschrieben werden.
+- Stattdessen arbeitet die Dynamic-Extension parallel über MQTT-Wildcards + Registry.
+- Damit es keine Doppelsteuerung gibt, schaltet die Dynamic-Extension bei aktivem Dynamic-Mode automatisch `input_boolean.zendure_auto_mode` der Basis auf `off`.
+
+Praktisch heißt das:
+1. Beide Dateien in `/packages/` lassen.
+2. Neustart.
+3. Dynamic-Layer erkennt lokale Geräte-IDs automatisch und steuert diese direkt per MQTT.
+4. Die alte hardcodierte Basis-Automatik bleibt als Fallback vorhanden, ist aber im Dynamic-Betrieb deaktiviert.
