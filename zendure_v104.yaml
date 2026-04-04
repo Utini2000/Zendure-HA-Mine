@@ -1313,6 +1313,9 @@ automation:
           shelly_ok: >-
             {% set meter = power_meter_entity %}
             {% set s = (expand(meter) | first) if meter|length > 0 else none %}
+            {% if s is none %}
+              {% set s = states.sensor.shellypro3em_9454c5b9b340_total_active_power %}
+            {% endif %}
             {% set val = s.state if s is not none else 'unknown' %}
             {% set ts_reported = as_timestamp(s.last_reported, 0) if s is not none and s.last_reported is defined else 0 %}
             {% set ts_changed = as_timestamp(s.last_changed, 0) if s is not none else 0 %}
@@ -3710,6 +3713,9 @@ automation:
         value_template: >-
           {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
           {% set s = (expand(meter) | first) if meter|length > 0 else none %}
+          {% if s is none %}
+            {% set s = states.sensor.shellypro3em_9454c5b9b340_total_active_power %}
+          {% endif %}
           {% set val = s.state if s is not none else 'unknown' %}
           {% set ts_reported = as_timestamp(s.last_reported, 0) if s is not none and s.last_reported is defined else 0 %}
           {% set ts_changed = as_timestamp(s.last_changed, 0) if s is not none else 0 %}
@@ -3721,6 +3727,9 @@ automation:
         value_template: >-
           {% set meter = states('input_text.zendure_power_meter_total_consumption') %}
           {% set s = (expand(meter) | first) if meter|length > 0 else none %}
+          {% if s is none %}
+            {% set s = states.sensor.shellypro3em_9454c5b9b340_total_active_power %}
+          {% endif %}
           {% set val = s.state if s is not none else 'unknown' %}
           {% set ts_reported = as_timestamp(s.last_reported, 0) if s is not none and s.last_reported is defined else 0 %}
           {% set ts_changed = as_timestamp(s.last_changed, 0) if s is not none else 0 %}
