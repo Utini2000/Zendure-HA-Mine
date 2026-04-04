@@ -1471,13 +1471,10 @@ automation:
           actual_2: "{{ states('sensor.solarflow_2_output_power') | float(0) if s2_ok | bool else 0 }}"
           actual_total: "{{ (actual_1 | int(0)) + (actual_2 | int(0)) }}"
 
-<<<<<<< codex/compare-v104-regulation-with-zendsk-1302u8
           busy_actual_1: "{{ actual_1 | int(0) if busy_u1 | bool else 0 }}"
           busy_actual_2: "{{ actual_2 | int(0) if busy_u2 | bool else 0 }}"
           busy_actual_total: "{{ (busy_actual_1 | int(0)) + (busy_actual_2 | int(0)) }}"
 
-=======
->>>>>>> master
           cmd_total: "{{ (s1_base|int(0)) + (s2_base|int(0)) }}"
           cmd_lag: "{{ (actual_total|int(0)) > ((cmd_total|int(0)) + 120) }}"
           export_persist: "{{ (grid|float(0)) < -100 }}"
