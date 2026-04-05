@@ -1442,7 +1442,7 @@ automation:
     max_exceeded: silent
     triggers:
       - trigger: time_pattern
-        seconds: "/4"
+        seconds: "/2"
         id: periodic
       - trigger: numeric_state
         entity_id: !secret power_meter_total_consumption
@@ -1572,6 +1572,26 @@ automation:
           s2_solar: "{{ states('sensor.solarflow_2_solar_input') | float(0) if pv_u2_recent | bool else 0 }}"
           actual_1_raw: "{{ states('sensor.solarflow_1_output_power') | float(0) if s1_ok | bool else 0 }}"
           actual_2_raw: "{{ states('sensor.solarflow_2_output_power') | float(0) if s2_ok | bool else 0 }}"
+          out_pwr_age_1: >-
+            {% set s = states.sensor.solarflow_1_output_power %}
+            {% if s is not none and s.last_reported is defined %}
+              {{ as_timestamp(now()) - as_timestamp(s.last_reported, 0) }}
+            {% elif s is not none %}
+              {{ as_timestamp(now()) - as_timestamp(s.last_changed, 0) }}
+            {% else %}
+              9999
+            {% endif %}
+          out_pwr_age_2: >-
+            {% set s = states.sensor.solarflow_2_output_power %}
+            {% if s is not none and s.last_reported is defined %}
+              {{ as_timestamp(now()) - as_timestamp(s.last_reported, 0) }}
+            {% elif s is not none %}
+              {{ as_timestamp(now()) - as_timestamp(s.last_changed, 0) }}
+            {% else %}
+              9999
+            {% endif %}
+          out_pwr_fresh_1: "{{ (out_pwr_age_1 | float(9999)) < 20 }}"
+          out_pwr_fresh_2: "{{ (out_pwr_age_2 | float(9999)) < 20 }}"
 
           calib1: "{{ is_state('input_boolean.zendure_calib_mode_u1', 'on') }}"
           calib2: "{{ is_state('input_boolean.zendure_calib_mode_u2', 'on') }}"
@@ -1590,6 +1610,7 @@ automation:
                and not (busy_u1 | bool)
                and (s1_base | int(0)) >= 120
                and (actual_1_raw | float(0)) < 20
+               and (out_pwr_fresh_1 | bool)
                and (time_since_1 | float(0)) > 10
                and (time_since_1 | float(0)) < 120 }}
           stall_u2: >-
@@ -1597,6 +1618,7 @@ automation:
                and not (busy_u2 | bool)
                and (s2_base | int(0)) >= 120
                and (actual_2_raw | float(0)) < 20
+               and (out_pwr_fresh_2 | bool)
                and (time_since_2 | float(0)) > 10
                and (time_since_2 | float(0)) < 120 }}
 
@@ -1681,8 +1703,28 @@ automation:
           grid: "{{ (states(power_meter_entity) | float(0)) if shelly_ok | bool else 0 }}"
           stale_force_zero_u1: "{{ (not s1_fresh|bool) and (s1_base|int(0) > 0) and ((grid|float(0)) < -80) }}"
           stale_force_zero_u2: "{{ (not s2_fresh|bool) and (s2_base|int(0) > 0) and ((grid|float(0)) < -80) }}"
-          actual_1: "{{ actual_1_raw | float(0) }}"
-          actual_2: "{{ actual_2_raw | float(0) }}"
+          actual_1: >-
+            {% set meas = actual_1_raw | float(0) %}
+            {% set cmd = s1_base | int(0) %}
+            {% set lim = s1_out_val | int(0) %}
+            {% set recent_cmd = (time_since_1 | float(0)) < 20 %}
+            {% set ack_like = (lim >= [cmd - 20, 0] | max) %}
+            {% if cmd >= 80 and recent_cmd and ack_like and (not out_pwr_fresh_1 | bool or meas < (cmd * 0.35)) %}
+              {{ [lim, cmd] | max }}
+            {% else %}
+              {{ meas }}
+            {% endif %}
+          actual_2: >-
+            {% set meas = actual_2_raw | float(0) %}
+            {% set cmd = s2_base | int(0) %}
+            {% set lim = s2_out_val | int(0) %}
+            {% set recent_cmd = (time_since_2 | float(0)) < 20 %}
+            {% set ack_like = (lim >= [cmd - 20, 0] | max) %}
+            {% if cmd >= 80 and recent_cmd and ack_like and (not out_pwr_fresh_2 | bool or meas < (cmd * 0.35)) %}
+              {{ [lim, cmd] | max }}
+            {% else %}
+              {{ meas }}
+            {% endif %}
           actual_total: "{{ (actual_1 | int(0)) + (actual_2 | int(0)) }}"
 
           busy_actual_1: "{{ actual_1 | int(0) if busy_u1 | bool else 0 }}"
@@ -1692,13 +1734,22 @@ automation:
 
           cmd_lag: "{{ (actual_total|int(0)) > ((cmd_total|int(0)) + 120) }}"
           export_persist: "{{ (grid|float(0)) < -100 }}"
-          control_total: "{{ (cmd_total|int(0)) if (export_persist|bool and cmd_lag|bool) else (actual_total|int(0)) }}"
+          tracking_stale: "{{ (out_pwr_age_1|float(9999) > 25) or (out_pwr_age_2|float(9999) > 25) }}"
+          recent_cmd_activity: "{{ (time_since_1|float(0) < 25) or (time_since_2|float(0) < 25) }}"
+          cmd_actual_gap: "{{ ((actual_total|int(0)) - (cmd_total|int(0))) | abs }}"
+          tracking_unreliable: "{{ tracking_stale|bool or (recent_cmd_activity|bool and (cmd_actual_gap|int(0) > 220)) }}"
+          control_total: >-
+            {% if tracking_unreliable | bool %}
+              {{ cmd_total | int(0) }}
+            {% else %}
+              {{ ((cmd_total|int(0) * 0.75) + (actual_total|int(0) * 0.25)) | int(0) }}
+            {% endif %}
 
           target_raw: >-
             {{ ((control_total | int(0)) + (grid | float(0)) - (grid_bias | int(0)))
                if shelly_ok | bool else (failsafe | int(0)) }}
           target_total: "{{ [[target_raw|int(0), 0]|max, global_max]|min }}"
-          delta_effective: "{{ (target_total|int(0)) - (actual_total|int(0)) }}"
+          delta_effective: "{{ (target_total|int(0)) - (control_total|int(0)) }}"
           rebalance_needed: >-
             {% set both_ready = s1_ok|bool and s2_ok|bool and not busy_u1 and not busy_u2 and (actual_total|int(0)) > 100 and v1_min > 3.10 and v2_min > 3.10 %}
             {% set ideal = (soc1_val / (soc1_val + soc2_val)) if (soc1_valid and soc2_valid and (soc1_val + soc2_val) > 0) else 0.5 %}
