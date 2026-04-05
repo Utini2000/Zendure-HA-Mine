@@ -1281,18 +1281,25 @@ automation:
     triggers:
       - trigger: time_pattern
         seconds: "/5"
+        id: periodic
       - trigger: numeric_state
         entity_id: !secret power_meter_total_consumption
         above: 150
         for: "00:00:01"
+        id: import_spike
       - trigger: numeric_state
         entity_id: !secret power_meter_total_consumption
         below: -30
         for: "00:00:01"
+        id: export_spike
+      - trigger: state
+        entity_id: !secret power_meter_total_consumption
+        id: meter_step
       - trigger: state
         entity_id:
           - input_boolean.zendure_bypass_u1
           - input_boolean.zendure_bypass_u2
+        id: mode_change
       - trigger: state
         entity_id:
           - input_boolean.zendure_auto_mode
@@ -1302,6 +1309,7 @@ automation:
           - input_boolean.zendure_calib_mode_u2
           - input_boolean.zendure_vguard_u1
           - input_boolean.zendure_vguard_u2
+        id: safety_change
     actions:
       - if:
           - condition: state
@@ -1454,7 +1462,18 @@ automation:
 
           zen_mode: "{{ (bypass1 or bypass2) }}"
           slider_change: "{{ states('input_number.zendure_conf_min_change') | int(5) }}"
-          min_change: "{{ (slider_change * 4) if zen_mode else slider_change }}"
+          jump_raw: >-
+            {% if trigger.id == 'meter_step' and trigger.from_state is not none and trigger.to_state is not none and is_number(trigger.from_state.state) and is_number(trigger.to_state.state) %}
+              {{ ((trigger.to_state.state | float(0)) - (trigger.from_state.state | float(0))) | abs }}
+            {% else %}
+              0
+            {% endif %}
+          fast_jump_threshold: "{{ [[(hysteresis|int(10) * 2), 30] | max, 120] | min }}"
+          fast_event: "{{ trigger.id == 'meter_step' and (jump_raw | float(0)) >= (fast_jump_threshold | int(30)) }}"
+          fast_push_1: "{{ fast_event and time_since_1 > 1.2 }}"
+          fast_push_2: "{{ fast_event and time_since_2 > 1.2 }}"
+          min_change_base: "{{ (slider_change * 4) if zen_mode else slider_change }}"
+          min_change: "{{ [3, ((min_change_base | int(0)) // 2)] | max if fast_event else min_change_base }}"
 
           override_margin: "{{ [min_change|int(0), 10] | max }}"
           spillover_override: "{{ (floor_1|int(0) > (s1_base|int(0) + override_margin|int(0))) or (floor_2|int(0) > (s2_base|int(0) + override_margin|int(0))) }}"
@@ -1505,6 +1524,7 @@ automation:
              or spillover_override
              or drift_recovery_1
              or drift_recovery_2
+             or fast_event
              or states('input_text.zendure_ac_mode_u1') != 'Output mode'
              or states('input_text.zendure_ac_mode_u2') != 'Output mode'
              or ((delta_effective | int(0) | abs) > (hysteresis | int(0)))
@@ -1616,9 +1636,10 @@ automation:
           - if:
               - condition: template
                 value_template: >-
-                  {{ s1_ok|bool and not busy_u1 and (not ack_pending_1|bool or fast_down_1|bool or force_zero_u1|bool) and (
+                  {{ s1_ok|bool and not busy_u1 and (not ack_pending_1|bool or fast_down_1|bool or force_zero_u1|bool or fast_push_1|bool) and (
                          fast_down_1|bool
                          or force_zero_u1|bool
+                         or fast_push_1|bool
                          or ((final_1|int(0) - s1_base|int(0))|abs >= (min_change|int(0)))
                          or override_u1
                          or drift_recovery_1
@@ -1650,9 +1671,10 @@ automation:
           - if:
               - condition: template
                 value_template: >-
-                  {{ s2_ok|bool and not busy_u2 and (not ack_pending_2|bool or fast_down_2|bool or force_zero_u2|bool) and (
+                  {{ s2_ok|bool and not busy_u2 and (not ack_pending_2|bool or fast_down_2|bool or force_zero_u2|bool or fast_push_2|bool) and (
                          fast_down_2|bool
                          or force_zero_u2|bool
+                         or fast_push_2|bool
                          or ((final_2|int(0) - s2_base|int(0))|abs >= (min_change|int(0)))
                          or override_u2
                          or drift_recovery_2
