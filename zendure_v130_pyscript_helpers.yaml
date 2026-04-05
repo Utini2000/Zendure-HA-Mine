@@ -1,0 +1,72 @@
+# ==============================================================================
+# Zendure v130 - Helpers for pyscript/zendure_p1_fast_controller.py
+# ------------------------------------------------------------------------------
+# Ablageempfehlung in Home Assistant:
+# - /config/packages/zendure_v130_pyscript_helpers.yaml
+# - /config/pyscript/zendure_p1_fast_controller.py
+# ==============================================================================
+
+input_boolean:
+  zendure_auto_mode:
+    name: "Zendure Auto Mode"
+    initial: on
+    icon: mdi:robot
+
+input_number:
+  zendure_target_total:
+    name: "Zendure Target Total"
+    min: 0
+    max: 1600
+    step: 1
+    mode: box
+    unit_of_measurement: W
+    initial: 0
+  zendure_last_sent_1:
+    name: "Zendure Last Sent U1"
+    min: 0
+    max: 800
+    step: 1
+    mode: box
+    unit_of_measurement: W
+    initial: 0
+  zendure_last_sent_2:
+    name: "Zendure Last Sent U2"
+    min: 0
+    max: 800
+    step: 1
+    mode: box
+    unit_of_measurement: W
+    initial: 0
+  zendure_conf_grid_bias:
+    name: "Zendure Grid Bias"
+    min: -100
+    max: 100
+    step: 1
+    mode: box
+    unit_of_measurement: W
+    initial: 10
+  zendure_conf_hysteresis:
+    name: "Zendure Hysteresis"
+    min: 0
+    max: 50
+    step: 1
+    mode: box
+    unit_of_measurement: W
+    initial: 8
+  zendure_conf_max_total:
+    name: "Zendure Max Total"
+    min: 0
+    max: 1600
+    step: 10
+    mode: box
+    unit_of_measurement: W
+    initial: 1200
+
+input_text:
+  # MQTT set topics for the two units (set your real topic strings)
+  zendure_topic_u1_set:
+    name: "Zendure U1 topic set"
+    initial: "REPLACE_WITH_TOPIC_U1_OUTPUTLIMIT_SET"
+  zendure_topic_u2_set:
+    name: "Zendure U2 topic set"
+    initial: "REPLACE_WITH_TOPIC_U2_OUTPUTLIMIT_SET"
