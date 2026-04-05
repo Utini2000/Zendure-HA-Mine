@@ -81,6 +81,7 @@ Zusätzlich liegt mit `zendure_v120_p1_event_hybrid.yaml` ein YAML-only P1-Event
 Für eine Python-basierte P1 Fast/Normal-Regelung (ohne kompletten Manager-Stack) sind außerdem enthalten:
 - `pyscript/zendure_p1_fast_controller.py`
 - `zendure_v130_pyscript_helpers.yaml`
+- `zendure_v130.yaml` (v110 + Features, aber ohne internen Control-Loop; gedacht für pyscript-Kern)
 
 
 ## Contributing

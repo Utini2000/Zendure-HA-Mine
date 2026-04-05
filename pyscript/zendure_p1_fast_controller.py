@@ -7,7 +7,9 @@ Requirements:
   - sensor.power_actual
   - sensor.solarflow_1_battery_level
   - sensor.solarflow_2_battery_level
-- input_number helpers from zendure_v130_pyscript_helpers.yaml
+- Scripts from zendure_v130.yaml:
+  - script.zendure_dispatch_u1_output
+  - script.zendure_dispatch_u2_output
 
 What it does:
 - Event-driven control based on P1 state changes
@@ -48,12 +50,12 @@ def _i(entity_id, default=0):
 
 
 def _publish_unit(unit: int, watts: int):
-    """Publish output limit and persist last sent helper."""
+    """Dispatch output via existing v130 scripts (keeps !secret MQTT topics in YAML)."""
     watts = max(0, min(MAX_PER_UNIT, int(watts)))
-    topic = state.get(f"input_text.zendure_topic_u{unit}_set")
-    if topic and str(topic).upper() not in ("UNKNOWN", "UNAVAILABLE", "NONE"):
-        service.call("mqtt", "publish", topic=str(topic), payload=str(watts), qos=1)
-    service.call("input_number", "set_value", entity_id=f"input_number.zendure_last_sent_{unit}", value=watts)
+    if unit == 1:
+        service.call("script", "zendure_dispatch_u1_output", power=watts, ensure_output_mode=True)
+    else:
+        service.call("script", "zendure_dispatch_u2_output", power=watts, ensure_output_mode=True)
 
 
 def _split_total(total: int):
@@ -100,7 +102,7 @@ def _control_once(p1_value: float):
     control_total = int(cmd_total * 0.75 + out_pwr_total * 0.25)
 
     bias = _i("input_number.zendure_conf_grid_bias", 10)
-    max_total = _i("input_number.zendure_conf_max_total", 1200)
+    max_total = _i("input_number.zendure_conf_max_output", 1200)
     hysteresis = _i("input_number.zendure_conf_hysteresis", 8)
 
     target_raw = control_total + int(p1_value) - bias
@@ -117,8 +119,6 @@ def _control_once(p1_value: float):
         _publish_unit(1, u1)
     if abs(u2 - cmd2) >= 8:
         _publish_unit(2, u2)
-
-    service.call("input_number", "set_value", entity_id="input_number.zendure_target_total", value=target_total)
 
     zero_next = now + TIMEZERO
     zero_fast = now + TIMEFAST

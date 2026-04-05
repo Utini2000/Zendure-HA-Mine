@@ -1,7 +1,10 @@
 # ==============================================================================
-# Zendure v130 - Helpers for pyscript/zendure_p1_fast_controller.py
+# Zendure v130 - Optional helpers for pyscript/zendure_p1_fast_controller.py
 # ------------------------------------------------------------------------------
-# Ablageempfehlung in Home Assistant:
+# IMPORTANT:
+# - Wenn du `zendure_v130.yaml` benutzt, brauchst du diese Datei NICHT zusätzlich.
+# - Diese Datei ist nur für Standalone-Setups gedacht.
+# Ablageempfehlung (Standalone):
 # - /config/packages/zendure_v130_pyscript_helpers.yaml
 # - /config/pyscript/zendure_p1_fast_controller.py
 # ==============================================================================
@@ -53,20 +56,11 @@ input_number:
     mode: box
     unit_of_measurement: W
     initial: 8
-  zendure_conf_max_total:
-    name: "Zendure Max Total"
+  zendure_conf_max_output:
+    name: "Zendure Max Output"
     min: 0
     max: 1600
     step: 10
     mode: box
     unit_of_measurement: W
     initial: 1200
-
-input_text:
-  # MQTT set topics for the two units (set your real topic strings)
-  zendure_topic_u1_set:
-    name: "Zendure U1 topic set"
-    initial: "REPLACE_WITH_TOPIC_U1_OUTPUTLIMIT_SET"
-  zendure_topic_u2_set:
-    name: "Zendure U2 topic set"
-    initial: "REPLACE_WITH_TOPIC_U2_OUTPUTLIMIT_SET"
