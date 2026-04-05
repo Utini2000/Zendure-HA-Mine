@@ -76,6 +76,12 @@ zendure_ha: !include docs/zendure_local_zendsk.yaml
 
 Im Beispiel (`docs/zendure_local_zendsk.yaml`) ist außerdem eine Start-Automation enthalten, die den Manager direkt auf `smart` stellt (ZENSDK-Regelung).
 
+Zusätzlich liegt mit `zendure_v120_p1_event_hybrid.yaml` ein YAML-only P1-Event-Hybrid-Regler in dieser Repo, falls du bewusst ohne den kompletten Manager-Stack arbeiten möchtest.
+
+Für eine Python-basierte P1 Fast/Normal-Regelung (ohne kompletten Manager-Stack) sind außerdem enthalten:
+- `pyscript/zendure_p1_fast_controller.py`
+- `zendure_v130_pyscript_helpers.yaml`
+
 
 ## Contributing
 
