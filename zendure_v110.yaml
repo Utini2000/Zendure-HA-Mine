@@ -1317,6 +1317,18 @@ automation:
             state: "off"
         then:
           - stop: "Auto Mode is OFF - Loop aborted."
+      - variables:
+          quick_jump: >-
+            {% if trigger.id == 'meter_step' and trigger.from_state is not none and trigger.to_state is not none and is_number(trigger.from_state.state) and is_number(trigger.to_state.state) %}
+              {{ ((trigger.to_state.state | float(0)) - (trigger.from_state.state | float(0))) | abs }}
+            {% else %}
+              0
+            {% endif %}
+      - if:
+          - condition: template
+            value_template: "{{ trigger.id == 'meter_step' and (quick_jump | float(0)) < 15 }}"
+        then:
+          - stop: "Meter step too small - skip full loop."
 
       - variables:
           power_meter_entity: "{{ states('input_text.zendure_power_meter_total_consumption') }}"
@@ -1493,6 +1505,9 @@ automation:
           ac_mode_retry_s: 20
           ac_mode_u1_cooldown_ok: "{{ (as_timestamp(now()) - as_timestamp(states.input_text.zendure_ac_mode_u1.last_updated, 0)) > ac_mode_retry_s }}"
           ac_mode_u2_cooldown_ok: "{{ (as_timestamp(now()) - as_timestamp(states.input_text.zendure_ac_mode_u2.last_updated, 0)) > ac_mode_retry_s }}"
+          cmd_retry_s: 2.2
+          cmd_u1_cooldown_ok: "{{ (time_since_1 | float(0)) > cmd_retry_s }}"
+          cmd_u2_cooldown_ok: "{{ (time_since_2 | float(0)) > cmd_retry_s }}"
 
           override_margin: "{{ [min_change|int(0), 10] | max }}"
           spillover_override: "{{ (floor_1|int(0) > (s1_base|int(0) + override_margin|int(0))) or (floor_2|int(0) > (s2_base|int(0) + override_margin|int(0))) }}"
@@ -1683,7 +1698,7 @@ automation:
           - if:
               - condition: template
                 value_template: >-
-                  {{ s1_ok|bool and not busy_u1 and (not ack_pending_1|bool or fast_down_1|bool or force_zero_u1|bool or fast_push_1|bool) and (
+                  {{ s1_ok|bool and not busy_u1 and cmd_u1_cooldown_ok and (not ack_pending_1|bool or fast_down_1|bool or force_zero_u1|bool or fast_push_1|bool) and (
                          fast_down_1|bool
                          or force_zero_u1|bool
                          or fast_push_1|bool
@@ -1714,7 +1729,7 @@ automation:
           - if:
               - condition: template
                 value_template: >-
-                  {{ s2_ok|bool and not busy_u2 and (not ack_pending_2|bool or fast_down_2|bool or force_zero_u2|bool or fast_push_2|bool) and (
+                  {{ s2_ok|bool and not busy_u2 and cmd_u2_cooldown_ok and (not ack_pending_2|bool or fast_down_2|bool or force_zero_u2|bool or fast_push_2|bool) and (
                          fast_down_2|bool
                          or force_zero_u2|bool
                          or fast_push_2|bool
