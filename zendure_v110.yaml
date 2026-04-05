@@ -794,6 +794,84 @@ script:
       - action: mqtt.publish
         data: { topic: !secret zendure_topic_u2_number_outputLimit_set, payload: "0", qos: 1 }
 
+  zendure_dispatch_u1_output:
+    alias: "Zendure: Dispatch U1 Output Command"
+    mode: queued
+    fields:
+      power:
+        description: "Target output power in W"
+      ensure_output_mode:
+        description: "If true, enforce output mode before sending output limit"
+    sequence:
+      - variables:
+          target: "{{ [0, [power | int(0), 800] | min] | max }}"
+          ensure_mode: "{{ ensure_output_mode | default(true) }}"
+          base: "{{ states('input_number.zendure_last_sent_1') | int(0) }}"
+          ts_cmd: "{{ as_timestamp(states.input_number.zendure_last_sent_1.last_updated, 0) }}"
+          since_cmd: "{{ as_timestamp(now()) - ts_cmd }}"
+          cmd_ok: "{{ since_cmd > 2.2 }}"
+          ts_mode: "{{ as_timestamp(states.input_text.zendure_ac_mode_u1.last_updated, 0) }}"
+          since_mode: "{{ as_timestamp(now()) - ts_mode }}"
+          mode_ok: "{{ since_mode > 20 }}"
+          mode_mismatch: "{{ states('sensor.solarflow_1_ac_mode') != 'Output mode' or states('input_text.zendure_ac_mode_u1') != 'Output mode' }}"
+      - if:
+          - condition: template
+            value_template: "{{ ensure_mode and mode_mismatch and mode_ok }}"
+        then:
+          - action: input_text.set_value
+            target: { entity_id: input_text.zendure_ac_mode_u1 }
+            data: { value: "Output mode" }
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
+      - if:
+          - condition: template
+            value_template: "{{ target != base and cmd_ok }}"
+        then:
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u1_number_outputLimit_set, payload: "{{ target }}", qos: 1 }
+          - action: input_number.set_value
+            target: { entity_id: input_number.zendure_last_sent_1 }
+            data: { value: "{{ target }}" }
+
+  zendure_dispatch_u2_output:
+    alias: "Zendure: Dispatch U2 Output Command"
+    mode: queued
+    fields:
+      power:
+        description: "Target output power in W"
+      ensure_output_mode:
+        description: "If true, enforce output mode before sending output limit"
+    sequence:
+      - variables:
+          target: "{{ [0, [power | int(0), 800] | min] | max }}"
+          ensure_mode: "{{ ensure_output_mode | default(true) }}"
+          base: "{{ states('input_number.zendure_last_sent_2') | int(0) }}"
+          ts_cmd: "{{ as_timestamp(states.input_number.zendure_last_sent_2.last_updated, 0) }}"
+          since_cmd: "{{ as_timestamp(now()) - ts_cmd }}"
+          cmd_ok: "{{ since_cmd > 2.2 }}"
+          ts_mode: "{{ as_timestamp(states.input_text.zendure_ac_mode_u2.last_updated, 0) }}"
+          since_mode: "{{ as_timestamp(now()) - ts_mode }}"
+          mode_ok: "{{ since_mode > 20 }}"
+          mode_mismatch: "{{ states('sensor.solarflow_2_ac_mode') != 'Output mode' or states('input_text.zendure_ac_mode_u2') != 'Output mode' }}"
+      - if:
+          - condition: template
+            value_template: "{{ ensure_mode and mode_mismatch and mode_ok }}"
+        then:
+          - action: input_text.set_value
+            target: { entity_id: input_text.zendure_ac_mode_u2 }
+            data: { value: "Output mode" }
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
+      - if:
+          - condition: template
+            value_template: "{{ target != base and cmd_ok }}"
+        then:
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u2_number_outputLimit_set, payload: "{{ target }}", qos: 1 }
+          - action: input_number.set_value
+            target: { entity_id: input_number.zendure_last_sent_2 }
+            data: { value: "{{ target }}" }
+
   zendure_start_emergency_u1_manual:
     alias: "Zendure: Manual Emergency Start U1"
     mode: restart
@@ -1502,9 +1580,6 @@ automation:
           fast_push_2: "{{ fast_event and time_since_2 > 1.2 }}"
           min_change_base: "{{ (slider_change * 4) if zen_mode else slider_change }}"
           min_change: "{{ [5, ((min_change_base | int(0)) // 2)] | max if fast_event else min_change_base }}"
-          ac_mode_retry_s: 20
-          ac_mode_u1_cooldown_ok: "{{ (as_timestamp(now()) - as_timestamp(states.input_text.zendure_ac_mode_u1.last_updated, 0)) > ac_mode_retry_s }}"
-          ac_mode_u2_cooldown_ok: "{{ (as_timestamp(now()) - as_timestamp(states.input_text.zendure_ac_mode_u2.last_updated, 0)) > ac_mode_retry_s }}"
           cmd_retry_s: 2.2
           cmd_u1_cooldown_ok: "{{ (time_since_1 | float(0)) > cmd_retry_s }}"
           cmd_u2_cooldown_ok: "{{ (time_since_2 | float(0)) > cmd_retry_s }}"
@@ -1709,21 +1784,10 @@ automation:
                          or ((actual_total|int(0) > global_max|int(0)) and (s1_base|int(0) > final_1|int(0)))
                        ) }}
             then:
-              - if:
-                  - condition: template
-                    value_template: >-
-                      {{ (states('input_text.zendure_ac_mode_u1') != 'Output mode' or states('sensor.solarflow_1_ac_mode') != 'Output mode') and ac_mode_u1_cooldown_ok }}
-                then:
-                  - action: input_text.set_value
-                    target: { entity_id: input_text.zendure_ac_mode_u1 }
-                    data: { value: "Output mode" }
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_number_outputLimit_set, payload: "{{ final_1|int }}", qos: 1 }
-              - action: input_number.set_value
-                target: { entity_id: input_number.zendure_last_sent_1 }
-                data: { value: "{{ final_1|int }}" }
+              - action: script.zendure_dispatch_u1_output
+                data:
+                  power: "{{ final_1|int }}"
+                  ensure_output_mode: true
 
           # --- UNIT 2 OUTPUT UPDATE ---
           - if:
@@ -1740,43 +1804,30 @@ automation:
                          or ((actual_total|int(0) > global_max|int(0)) and (s2_base|int(0) > final_2|int(0)))
                        ) }}
             then:
-              - if:
-                  - condition: template
-                    value_template: >-
-                      {{ (states('input_text.zendure_ac_mode_u2') != 'Output mode' or states('sensor.solarflow_2_ac_mode') != 'Output mode') and ac_mode_u2_cooldown_ok }}
-                then:
-                  - action: input_text.set_value
-                    target: { entity_id: input_text.zendure_ac_mode_u2 }
-                    data: { value: "Output mode" }
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_number_outputLimit_set, payload: "{{ final_2|int }}", qos: 1 }
-              - action: input_number.set_value
-                target: { entity_id: input_number.zendure_last_sent_2 }
-                data: { value: "{{ final_2|int }}" }
+              - action: script.zendure_dispatch_u2_output
+                data:
+                  power: "{{ final_2|int }}"
+                  ensure_output_mode: true
 
           # --- UNIT 1 STALE BEST-EFFORT 0W CLAMP ---
           - if:
               - condition: template
                 value_template: "{{ stale_force_zero_u1|bool }}"
             then:
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_number_outputLimit_set, payload: "0", qos: 1 }
-              - action: input_number.set_value
-                target: { entity_id: input_number.zendure_last_sent_1 }
-                data: { value: 0 }
+              - action: script.zendure_dispatch_u1_output
+                data:
+                  power: 0
+                  ensure_output_mode: false
 
           # --- UNIT 2 STALE BEST-EFFORT 0W CLAMP ---
           - if:
               - condition: template
                 value_template: "{{ stale_force_zero_u2|bool }}"
             then:
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_number_outputLimit_set, payload: "0", qos: 1 }
-              - action: input_number.set_value
-                target: { entity_id: input_number.zendure_last_sent_2 }
-                data: { value: 0 }
+              - action: script.zendure_dispatch_u2_output
+                data:
+                  power: 0
+                  ensure_output_mode: false
 
   # --- 6.5 STATE MACHINE (SAFE RETURN & SYNC) ---
   - alias: "Zendure: State Machine (Smart Single-Channel)"
