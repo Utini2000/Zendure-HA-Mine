@@ -784,15 +784,189 @@ script:
     alias: "Zendure: U1 OutputLimit -> 0W"
     mode: restart
     sequence:
-      - action: mqtt.publish
-        data: { topic: !secret zendure_topic_u1_number_outputLimit_set, payload: "0", qos: 1 }
+      - action: script.zendure_dispatch_u1_output
+        data:
+          power: 0
+          ensure_output_mode: false
 
   zendure_set_u2_outputlimit_zero:
     alias: "Zendure: U2 OutputLimit -> 0W"
     mode: restart
     sequence:
-      - action: mqtt.publish
-        data: { topic: !secret zendure_topic_u2_number_outputLimit_set, payload: "0", qos: 1 }
+      - action: script.zendure_dispatch_u2_output
+        data:
+          power: 0
+          ensure_output_mode: false
+
+  zendure_dispatch_u1_output:
+    alias: "Zendure: Dispatch U1 Output Command"
+    mode: queued
+    fields:
+      power:
+        description: "Target output power in W"
+      ensure_output_mode:
+        description: "If true, enforce output mode before sending output limit"
+    sequence:
+      - variables:
+          target: "{{ [0, [power | int(0), 800] | min] | max }}"
+          ensure_mode: "{{ ensure_output_mode | default(true) }}"
+          base: "{{ states('input_number.zendure_last_sent_1') | int(0) }}"
+          ts_cmd: "{{ as_timestamp(states.input_number.zendure_last_sent_1.last_updated, 0) }}"
+          since_cmd: "{{ as_timestamp(now()) - ts_cmd }}"
+          cmd_ok: "{{ since_cmd > 2.2 }}"
+          ts_mode: "{{ as_timestamp(states.input_text.zendure_ac_mode_u1.last_updated, 0) }}"
+          since_mode: "{{ as_timestamp(now()) - ts_mode }}"
+          mode_ok: "{{ since_mode > 20 }}"
+          mode_mismatch: "{{ states('sensor.solarflow_1_ac_mode') != 'Output mode' or states('input_text.zendure_ac_mode_u1') != 'Output mode' }}"
+      - if:
+          - condition: template
+            value_template: "{{ ensure_mode and mode_mismatch and mode_ok }}"
+        then:
+          - action: input_text.set_value
+            target: { entity_id: input_text.zendure_ac_mode_u1 }
+            data: { value: "Output mode" }
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
+      - if:
+          - condition: template
+            value_template: "{{ target != base and cmd_ok }}"
+        then:
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u1_number_outputLimit_set, payload: "{{ target }}", qos: 1 }
+          - action: input_number.set_value
+            target: { entity_id: input_number.zendure_last_sent_1 }
+            data: { value: "{{ target }}" }
+
+  zendure_dispatch_u2_output:
+    alias: "Zendure: Dispatch U2 Output Command"
+    mode: queued
+    fields:
+      power:
+        description: "Target output power in W"
+      ensure_output_mode:
+        description: "If true, enforce output mode before sending output limit"
+    sequence:
+      - variables:
+          target: "{{ [0, [power | int(0), 800] | min] | max }}"
+          ensure_mode: "{{ ensure_output_mode | default(true) }}"
+          base: "{{ states('input_number.zendure_last_sent_2') | int(0) }}"
+          ts_cmd: "{{ as_timestamp(states.input_number.zendure_last_sent_2.last_updated, 0) }}"
+          since_cmd: "{{ as_timestamp(now()) - ts_cmd }}"
+          cmd_ok: "{{ since_cmd > 2.2 }}"
+          ts_mode: "{{ as_timestamp(states.input_text.zendure_ac_mode_u2.last_updated, 0) }}"
+          since_mode: "{{ as_timestamp(now()) - ts_mode }}"
+          mode_ok: "{{ since_mode > 20 }}"
+          mode_mismatch: "{{ states('sensor.solarflow_2_ac_mode') != 'Output mode' or states('input_text.zendure_ac_mode_u2') != 'Output mode' }}"
+      - if:
+          - condition: template
+            value_template: "{{ ensure_mode and mode_mismatch and mode_ok }}"
+        then:
+          - action: input_text.set_value
+            target: { entity_id: input_text.zendure_ac_mode_u2 }
+            data: { value: "Output mode" }
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
+      - if:
+          - condition: template
+            value_template: "{{ target != base and cmd_ok }}"
+        then:
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u2_number_outputLimit_set, payload: "{{ target }}", qos: 1 }
+          - action: input_number.set_value
+            target: { entity_id: input_number.zendure_last_sent_2 }
+            data: { value: "{{ target }}" }
+
+  zendure_dispatch_u1_ac_mode:
+    alias: "Zendure: Dispatch U1 AC Mode"
+    mode: queued
+    fields:
+      mode:
+        description: "Input mode oder Output mode"
+      force:
+        description: "Ignoriere Cooldown bei Notfällen"
+    sequence:
+      - variables:
+          target_mode: "{{ mode | default('Output mode') }}"
+          force_mode: "{{ force | default(false) }}"
+          ts_mode: "{{ as_timestamp(states.input_text.zendure_ac_mode_u1.last_updated, 0) }}"
+          since_mode: "{{ as_timestamp(now()) - ts_mode }}"
+          mode_ok: "{{ since_mode > 20 }}"
+          mode_mismatch: "{{ states('sensor.solarflow_1_ac_mode') != target_mode or states('input_text.zendure_ac_mode_u1') != target_mode }}"
+      - if:
+          - condition: template
+            value_template: "{{ mode_mismatch and (force_mode or mode_ok) }}"
+        then:
+          - action: input_text.set_value
+            target: { entity_id: input_text.zendure_ac_mode_u1 }
+            data: { value: "{{ target_mode }}" }
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "{{ target_mode }}", qos: 1 }
+
+  zendure_dispatch_u2_ac_mode:
+    alias: "Zendure: Dispatch U2 AC Mode"
+    mode: queued
+    fields:
+      mode:
+        description: "Input mode oder Output mode"
+      force:
+        description: "Ignoriere Cooldown bei Notfällen"
+    sequence:
+      - variables:
+          target_mode: "{{ mode | default('Output mode') }}"
+          force_mode: "{{ force | default(false) }}"
+          ts_mode: "{{ as_timestamp(states.input_text.zendure_ac_mode_u2.last_updated, 0) }}"
+          since_mode: "{{ as_timestamp(now()) - ts_mode }}"
+          mode_ok: "{{ since_mode > 20 }}"
+          mode_mismatch: "{{ states('sensor.solarflow_2_ac_mode') != target_mode or states('input_text.zendure_ac_mode_u2') != target_mode }}"
+      - if:
+          - condition: template
+            value_template: "{{ mode_mismatch and (force_mode or mode_ok) }}"
+        then:
+          - action: input_text.set_value
+            target: { entity_id: input_text.zendure_ac_mode_u2 }
+            data: { value: "{{ target_mode }}" }
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "{{ target_mode }}", qos: 1 }
+
+  zendure_dispatch_u1_inputlimit:
+    alias: "Zendure: Dispatch U1 InputLimit"
+    mode: queued
+    fields:
+      power:
+        description: "Target input limit in W"
+    sequence:
+      - variables:
+          target: "{{ [0, [power | int(0), 800] | min] | max }}"
+          base: "{{ states('sensor.solarflow_1_setting_chargelimit') | int(-1) }}"
+          ts_base: "{{ as_timestamp(states.sensor.solarflow_1_setting_chargelimit.last_updated, 0) }}"
+          since_base: "{{ as_timestamp(now()) - ts_base }}"
+          cmd_ok: "{{ since_base > 2.2 }}"
+      - if:
+          - condition: template
+            value_template: "{{ target != base and cmd_ok }}"
+        then:
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ target }}", qos: 1 }
+
+  zendure_dispatch_u2_inputlimit:
+    alias: "Zendure: Dispatch U2 InputLimit"
+    mode: queued
+    fields:
+      power:
+        description: "Target input limit in W"
+    sequence:
+      - variables:
+          target: "{{ [0, [power | int(0), 800] | min] | max }}"
+          base: "{{ states('sensor.solarflow_2_setting_chargelimit') | int(-1) }}"
+          ts_base: "{{ as_timestamp(states.sensor.solarflow_2_setting_chargelimit.last_updated, 0) }}"
+          since_base: "{{ as_timestamp(now()) - ts_base }}"
+          cmd_ok: "{{ since_base > 2.2 }}"
+      - if:
+          - condition: template
+            value_template: "{{ target != base and cmd_ok }}"
+        then:
+          - action: mqtt.publish
+            data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ target }}", qos: 1 }
 
   zendure_dispatch_u1_output:
     alias: "Zendure: Dispatch U1 Output Command"
@@ -886,24 +1060,20 @@ script:
         target: { entity_id: input_boolean.zendure_vguard_u1 }
       - action: input_boolean.turn_on
         target: { entity_id: input_boolean.zendure_emergency_u1 }
-      - action: input_text.set_value
-        target: { entity_id: input_text.zendure_ac_mode_u1 }
-        data: { value: "Input mode" }
       - variables:
           t1: "{{ states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(0)) }}"
           soc1: "{{ states('sensor.solarflow_1_battery_level') | float(0) }}"
           cl1: "{{ 100 if t1 < 5 else (300 if t1 < 10 else 800) }}"
           ss1: "{{ 300 if soc1 < 12 else 800 }}"
           limit_emerg_u1: "{{ [300, cl1|int, ss1|int]|min }}"
-      - action: mqtt.publish
-        data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-      - delay: "00:00:00.500"
-      - action: mqtt.publish
-        data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-      - delay: "00:00:01"
+      - action: script.zendure_dispatch_u1_ac_mode
+        data:
+          mode: "Input mode"
+          force: true
       - action: script.zendure_set_u1_outputlimit_zero
-      - action: mqtt.publish
-        data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ limit_emerg_u1 }}", qos: 1 }
+      - action: script.zendure_dispatch_u1_inputlimit
+        data:
+          power: "{{ limit_emerg_u1|int }}"
       - action: input_number.set_value
         target: { entity_id: input_number.zendure_last_sent_1 }
         data: { value: 0 }
@@ -927,24 +1097,20 @@ script:
         target: { entity_id: input_boolean.zendure_vguard_u2 }
       - action: input_boolean.turn_on
         target: { entity_id: input_boolean.zendure_emergency_u2 }
-      - action: input_text.set_value
-        target: { entity_id: input_text.zendure_ac_mode_u2 }
-        data: { value: "Input mode" }
       - variables:
           t2: "{{ states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(0)) }}"
           soc2: "{{ states('sensor.solarflow_2_battery_level') | float(0) }}"
           cl2: "{{ 100 if t2 < 5 else (300 if t2 < 10 else 800) }}"
           ss2: "{{ 300 if soc2 < 12 else 800 }}"
           limit_emerg_u2: "{{ [300, cl2|int, ss2|int]|min }}"
-      - action: mqtt.publish
-        data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-      - delay: "00:00:00.500"
-      - action: mqtt.publish
-        data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-      - delay: "00:00:01"
+      - action: script.zendure_dispatch_u2_ac_mode
+        data:
+          mode: "Input mode"
+          force: true
       - action: script.zendure_set_u2_outputlimit_zero
-      - action: mqtt.publish
-        data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ limit_emerg_u2 }}", qos: 1 }
+      - action: script.zendure_dispatch_u2_inputlimit
+        data:
+          power: "{{ limit_emerg_u2|int }}"
       - action: input_number.set_value
         target: { entity_id: input_number.zendure_last_sent_2 }
         data: { value: 0 }
@@ -969,12 +1135,10 @@ script:
               - condition: template
                 value_template: "{{ states('sensor.solarflow_1_ac_mode') != 'Output mode' }}"
             then:
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u1_ac_mode
+                data:
+                  mode: "Output mode"
+                  force: true
           - action: script.zendure_set_u1_outputlimit_zero
           - if:
               - condition: template
@@ -1004,12 +1168,10 @@ script:
               - condition: template
                 value_template: "{{ states('sensor.solarflow_2_ac_mode') != 'Output mode' }}"
             then:
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u2_ac_mode
+                data:
+                  mode: "Output mode"
+                  force: true
           - action: script.zendure_set_u2_outputlimit_zero
           - if:
               - condition: template
@@ -1358,7 +1520,7 @@ automation:
     max_exceeded: silent
     triggers:
       - trigger: time_pattern
-        seconds: "/5"
+        seconds: "/4"
         id: periodic
       - trigger: numeric_state
         entity_id: !secret power_meter_total_consumption
@@ -2149,26 +2311,23 @@ automation:
                       - action: input_text.set_value
                         target: { entity_id: input_text.zendure_ac_mode_u1 }
                         data: { value: "Output mode" }
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-                      - delay: "00:00:00.500"
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-                      - delay: "00:00:01"
+                      - action: script.zendure_dispatch_u1_ac_mode
+                        data:
+                          mode: "Output mode"
+                          force: true
                       - action: script.zendure_set_u1_outputlimit_zero
                     else:
                       - action: input_text.set_value
                         target: { entity_id: input_text.zendure_ac_mode_u1 }
                         data: { value: "Input mode" }
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-                      - delay: "00:00:00.500"
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-                      - delay: "00:00:01"
+                      - action: script.zendure_dispatch_u1_ac_mode
+                        data:
+                          mode: "Input mode"
+                          force: true
                       - action: script.zendure_set_u1_outputlimit_zero
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ limit_calib_u1 }}", qos: 1 }
+                      - action: script.zendure_dispatch_u1_inputlimit
+                        data:
+                          power: "{{ limit_calib_u1 }}"
                   - action: input_number.set_value
                     target: { entity_id: input_number.zendure_last_sent_1 }
                     data: { value: 0 }
@@ -2195,15 +2354,14 @@ automation:
                   - action: input_text.set_value
                     target: { entity_id: input_text.zendure_ac_mode_u1 }
                     data: { value: "Input mode" }
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-                  - delay: "00:00:00.500"
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-                  - delay: "00:00:01"
+                  - action: script.zendure_dispatch_u1_ac_mode
+                    data:
+                      mode: "Input mode"
+                      force: true
                   - action: script.zendure_set_u1_outputlimit_zero
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ limit_emerg_u1 }}", qos: 1 }
+                  - action: script.zendure_dispatch_u1_inputlimit
+                    data:
+                      power: "{{ limit_emerg_u1 }}"
                   - action: input_number.set_value
                     target: { entity_id: input_number.zendure_last_sent_1 }
                     data: { value: 0 }
@@ -2305,26 +2463,23 @@ automation:
                       - action: input_text.set_value
                         target: { entity_id: input_text.zendure_ac_mode_u2 }
                         data: { value: "Output mode" }
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-                      - delay: "00:00:00.500"
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-                      - delay: "00:00:01"
+                      - action: script.zendure_dispatch_u2_ac_mode
+                        data:
+                          mode: "Output mode"
+                          force: true
                       - action: script.zendure_set_u2_outputlimit_zero
                     else:
                       - action: input_text.set_value
                         target: { entity_id: input_text.zendure_ac_mode_u2 }
                         data: { value: "Input mode" }
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-                      - delay: "00:00:00.500"
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-                      - delay: "00:00:01"
+                      - action: script.zendure_dispatch_u2_ac_mode
+                        data:
+                          mode: "Input mode"
+                          force: true
                       - action: script.zendure_set_u2_outputlimit_zero
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ limit_calib_u2 }}", qos: 1 }
+                      - action: script.zendure_dispatch_u2_inputlimit
+                        data:
+                          power: "{{ limit_calib_u2 }}"
                   - action: input_number.set_value
                     target: { entity_id: input_number.zendure_last_sent_2 }
                     data: { value: 0 }
@@ -2351,15 +2506,14 @@ automation:
                   - action: input_text.set_value
                     target: { entity_id: input_text.zendure_ac_mode_u2 }
                     data: { value: "Input mode" }
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-                  - delay: "00:00:00.500"
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-                  - delay: "00:00:01"
+                  - action: script.zendure_dispatch_u2_ac_mode
+                    data:
+                      mode: "Input mode"
+                      force: true
                   - action: script.zendure_set_u2_outputlimit_zero
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ limit_emerg_u2 }}", qos: 1 }
+                  - action: script.zendure_dispatch_u2_inputlimit
+                    data:
+                      power: "{{ limit_emerg_u2 }}"
                   - action: input_number.set_value
                     target: { entity_id: input_number.zendure_last_sent_2 }
                     data: { value: 0 }
@@ -2798,26 +2952,23 @@ automation:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u1 }
                 data: { value: "Output mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u1_ac_mode
+                data:
+                  mode: "Output mode"
+                  force: true
               - action: script.zendure_set_u1_outputlimit_zero
             else:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u1 }
                 data: { value: "Input mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u1_ac_mode
+                data:
+                  mode: "Input mode"
+                  force: true
               - action: script.zendure_set_u1_outputlimit_zero
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ limit_calib_u1 }}", qos: 1 }
+              - action: script.zendure_dispatch_u1_inputlimit
+                data:
+                  power: "{{ limit_calib_u1 }}"
           - action: input_number.set_value
             target: { entity_id: input_number.zendure_last_sent_1 }
             data: { value: 0 }
@@ -2875,26 +3026,23 @@ automation:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u2 }
                 data: { value: "Output mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u2_ac_mode
+                data:
+                  mode: "Output mode"
+                  force: true
               - action: script.zendure_set_u2_outputlimit_zero
             else:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u2 }
                 data: { value: "Input mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u2_ac_mode
+                data:
+                  mode: "Input mode"
+                  force: true
               - action: script.zendure_set_u2_outputlimit_zero
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ limit_calib_u2 }}", qos: 1 }
+              - action: script.zendure_dispatch_u2_inputlimit
+                data:
+                  power: "{{ limit_calib_u2 }}"
           - action: input_number.set_value
             target: { entity_id: input_number.zendure_last_sent_2 }
             data: { value: 0 }
@@ -2924,12 +3072,10 @@ automation:
           - action: input_text.set_value
             target: { entity_id: input_text.zendure_ac_mode_u1 }
             data: { value: "Output mode" }
-          - action: mqtt.publish
-            data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-          - delay: "00:00:00.500"
-          - action: mqtt.publish
-            data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-          - delay: "00:00:01"
+          - action: script.zendure_dispatch_u1_ac_mode
+            data:
+              mode: "Output mode"
+              force: true
           - action: script.zendure_set_u1_outputlimit_zero
           - action: input_number.set_value
             target: { entity_id: input_number.zendure_last_sent_1 }
@@ -2967,12 +3113,10 @@ automation:
           - action: input_text.set_value
             target: { entity_id: input_text.zendure_ac_mode_u2 }
             data: { value: "Output mode" }
-          - action: mqtt.publish
-            data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-          - delay: "00:00:00.500"
-          - action: mqtt.publish
-            data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-          - delay: "00:00:01"
+          - action: script.zendure_dispatch_u2_ac_mode
+            data:
+              mode: "Output mode"
+              force: true
           - action: script.zendure_set_u2_outputlimit_zero
           - action: input_number.set_value
             target: { entity_id: input_number.zendure_last_sent_2 }
@@ -3089,18 +3233,14 @@ automation:
                       - condition: template
                         value_template: "{{ states('input_text.zendure_ac_mode_u1') != 'Input mode' }}"
                     then:
-                      - action: input_text.set_value
-                        target: { entity_id: input_text.zendure_ac_mode_u1 }
-                        data: { value: "Input mode" }
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-                      - delay: "00:00:00.500"
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-                      - delay: "00:00:01"
+                      - action: script.zendure_dispatch_u1_ac_mode
+                        data:
+                          mode: "Input mode"
+                          force: true
                       - action: script.zendure_set_u1_outputlimit_zero
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ limit_calib_u1|int }}", qos: 1 }
+                  - action: script.zendure_dispatch_u1_inputlimit
+                    data:
+                      power: "{{ limit_calib_u1|int }}"
               - conditions:
                   - condition: template
                     value_template: >
@@ -3111,15 +3251,10 @@ automation:
                           or states('input_number.zendure_last_sent_1')|int(-1) != 0
                       ) }}
                 sequence:
-                  - action: input_text.set_value
-                    target: { entity_id: input_text.zendure_ac_mode_u1 }
-                    data: { value: "Output mode" }
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:00.500"
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:01"
+                  - action: script.zendure_dispatch_u1_ac_mode
+                    data:
+                      mode: "Output mode"
+                      force: true
                   - action: script.zendure_set_u1_outputlimit_zero
 
           - choose:
@@ -3134,18 +3269,14 @@ automation:
                       - condition: template
                         value_template: "{{ states('input_text.zendure_ac_mode_u2') != 'Input mode' }}"
                     then:
-                      - action: input_text.set_value
-                        target: { entity_id: input_text.zendure_ac_mode_u2 }
-                        data: { value: "Input mode" }
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-                      - delay: "00:00:00.500"
-                      - action: mqtt.publish
-                        data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-                      - delay: "00:00:01"
+                      - action: script.zendure_dispatch_u2_ac_mode
+                        data:
+                          mode: "Input mode"
+                          force: true
                       - action: script.zendure_set_u2_outputlimit_zero
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ limit_calib_u2|int }}", qos: 1 }
+                  - action: script.zendure_dispatch_u2_inputlimit
+                    data:
+                      power: "{{ limit_calib_u2|int }}"
               - conditions:
                   - condition: template
                     value_template: >
@@ -3156,15 +3287,10 @@ automation:
                           or states('input_number.zendure_last_sent_2')|int(-1) != 0
                       ) }}
                 sequence:
-                  - action: input_text.set_value
-                    target: { entity_id: input_text.zendure_ac_mode_u2 }
-                    data: { value: "Output mode" }
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:00.500"
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:01"
+                  - action: script.zendure_dispatch_u2_ac_mode
+                    data:
+                      mode: "Output mode"
+                      force: true
                   - action: script.zendure_set_u2_outputlimit_zero
 
   # --- 6.8b AUTO-EMERGENCY MANAGER (PER-UNIT) ---
@@ -3230,15 +3356,14 @@ automation:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u1 }
                 data: { value: "Input mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u1_ac_mode
+                data:
+                  mode: "Input mode"
+                  force: true
               - action: script.zendure_set_u1_outputlimit_zero
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ limit_emerg_u1 }}", qos: 1 }
+              - action: script.zendure_dispatch_u1_inputlimit
+                data:
+                  power: "{{ limit_emerg_u1 }}"
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_last_sent_1 }
                 data: { value: 0 }
@@ -3281,15 +3406,14 @@ automation:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u2 }
                 data: { value: "Input mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u2_ac_mode
+                data:
+                  mode: "Input mode"
+                  force: true
               - action: script.zendure_set_u2_outputlimit_zero
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ limit_emerg_u2 }}", qos: 1 }
+              - action: script.zendure_dispatch_u2_inputlimit
+                data:
+                  power: "{{ limit_emerg_u2 }}"
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_last_sent_2 }
                 data: { value: 0 }
@@ -3544,15 +3668,14 @@ automation:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u1 }
                 data: { value: "Input mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u1_ac_mode
+                data:
+                  mode: "Input mode"
+                  force: true
               - action: script.zendure_set_u1_outputlimit_zero
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ limit_emerg_u1 }}", qos: 1 }
+              - action: script.zendure_dispatch_u1_inputlimit
+                data:
+                  power: "{{ limit_emerg_u1 }}"
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_last_sent_1 }
                 data: { value: 0 }
@@ -3571,15 +3694,14 @@ automation:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u1 }
                 data: { value: "Input mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u1_ac_mode
+                data:
+                  mode: "Input mode"
+                  force: true
               - action: script.zendure_set_u1_outputlimit_zero
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ limit_emerg_u1 }}", qos: 1 }
+              - action: script.zendure_dispatch_u1_inputlimit
+                data:
+                  power: "{{ limit_emerg_u1 }}"
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_last_sent_1 }
                 data: { value: 0 }
@@ -3598,12 +3720,10 @@ automation:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u1 }
                 data: { value: "Output mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u1_ac_mode
+                data:
+                  mode: "Output mode"
+                  force: true
               - action: script.zendure_set_u1_outputlimit_zero
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_last_sent_1 }
@@ -3656,15 +3776,14 @@ automation:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u2 }
                 data: { value: "Input mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u2_ac_mode
+                data:
+                  mode: "Input mode"
+                  force: true
               - action: script.zendure_set_u2_outputlimit_zero
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ limit_emerg_u2 }}", qos: 1 }
+              - action: script.zendure_dispatch_u2_inputlimit
+                data:
+                  power: "{{ limit_emerg_u2 }}"
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_last_sent_2 }
                 data: { value: 0 }
@@ -3683,15 +3802,14 @@ automation:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u2 }
                 data: { value: "Input mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Input mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u2_ac_mode
+                data:
+                  mode: "Input mode"
+                  force: true
               - action: script.zendure_set_u2_outputlimit_zero
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ limit_emerg_u2 }}", qos: 1 }
+              - action: script.zendure_dispatch_u2_inputlimit
+                data:
+                  power: "{{ limit_emerg_u2 }}"
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_last_sent_2 }
                 data: { value: 0 }
@@ -3710,12 +3828,10 @@ automation:
               - action: input_text.set_value
                 target: { entity_id: input_text.zendure_ac_mode_u2 }
                 data: { value: "Output mode" }
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-              - delay: "00:00:01"
+              - action: script.zendure_dispatch_u2_ac_mode
+                data:
+                  mode: "Output mode"
+                  force: true
               - action: script.zendure_set_u2_outputlimit_zero
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_last_sent_2 }
@@ -4222,11 +4338,10 @@ automation:
               - variables:
                   ac1_is: "{{ states('sensor.solarflow_1_ac_mode') }}"
                   ac1_should: "{{ states('input_text.zendure_ac_mode_u1') }}"
-              - action: mqtt.publish
+              - action: script.zendure_dispatch_u1_ac_mode
                 data:
-                  topic: !secret zendure_topic_u1_select_acMode_set
-                  payload: "{{ ac1_should }}"
-                  qos: 1
+                  mode: "{{ ac1_should }}"
+                  force: true
               - action: notify.send_message
                 target:
                   entity_id: !secret telegram_id1
@@ -4281,11 +4396,10 @@ automation:
               - variables:
                   ac2_is: "{{ states('sensor.solarflow_2_ac_mode') }}"
                   ac2_should: "{{ states('input_text.zendure_ac_mode_u2') }}"
-              - action: mqtt.publish
+              - action: script.zendure_dispatch_u2_ac_mode
                 data:
-                  topic: !secret zendure_topic_u2_select_acMode_set
-                  payload: "{{ ac2_should }}"
-                  qos: 1
+                  mode: "{{ ac2_should }}"
+                  force: true
               - action: notify.send_message
                 target:
                   entity_id: !secret telegram_id1
