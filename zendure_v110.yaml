@@ -1489,7 +1489,10 @@ automation:
           fast_push_1: "{{ fast_event and time_since_1 > 1.2 }}"
           fast_push_2: "{{ fast_event and time_since_2 > 1.2 }}"
           min_change_base: "{{ (slider_change * 4) if zen_mode else slider_change }}"
-          min_change: "{{ [3, ((min_change_base | int(0)) // 2)] | max if fast_event else min_change_base }}"
+          min_change: "{{ [5, ((min_change_base | int(0)) // 2)] | max if fast_event else min_change_base }}"
+          ac_mode_retry_s: 20
+          ac_mode_u1_cooldown_ok: "{{ (as_timestamp(now()) - as_timestamp(states.input_text.zendure_ac_mode_u1.last_updated, 0)) > ac_mode_retry_s }}"
+          ac_mode_u2_cooldown_ok: "{{ (as_timestamp(now()) - as_timestamp(states.input_text.zendure_ac_mode_u2.last_updated, 0)) > ac_mode_retry_s }}"
 
           override_margin: "{{ [min_change|int(0), 10] | max }}"
           spillover_override: "{{ (floor_1|int(0) > (s1_base|int(0) + override_margin|int(0))) or (floor_2|int(0) > (s2_base|int(0) + override_margin|int(0))) }}"
@@ -1694,17 +1697,13 @@ automation:
               - if:
                   - condition: template
                     value_template: >-
-                      {{ states('input_text.zendure_ac_mode_u1') != 'Output mode' or states('sensor.solarflow_1_ac_mode') != 'Output mode' }}
+                      {{ (states('input_text.zendure_ac_mode_u1') != 'Output mode' or states('sensor.solarflow_1_ac_mode') != 'Output mode') and ac_mode_u1_cooldown_ok }}
                 then:
                   - action: input_text.set_value
                     target: { entity_id: input_text.zendure_ac_mode_u1 }
                     data: { value: "Output mode" }
                   - action: mqtt.publish
                     data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:00.500"
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:01"
               - action: mqtt.publish
                 data: { topic: !secret zendure_topic_u1_number_outputLimit_set, payload: "{{ final_1|int }}", qos: 1 }
               - action: input_number.set_value
@@ -1729,17 +1728,13 @@ automation:
               - if:
                   - condition: template
                     value_template: >-
-                      {{ states('input_text.zendure_ac_mode_u2') != 'Output mode' or states('sensor.solarflow_2_ac_mode') != 'Output mode' }}
+                      {{ (states('input_text.zendure_ac_mode_u2') != 'Output mode' or states('sensor.solarflow_2_ac_mode') != 'Output mode') and ac_mode_u2_cooldown_ok }}
                 then:
                   - action: input_text.set_value
                     target: { entity_id: input_text.zendure_ac_mode_u2 }
                     data: { value: "Output mode" }
                   - action: mqtt.publish
                     data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:00.500"
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:01"
               - action: mqtt.publish
                 data: { topic: !secret zendure_topic_u2_number_outputLimit_set, payload: "{{ final_2|int }}", qos: 1 }
               - action: input_number.set_value
@@ -4166,12 +4161,6 @@ automation:
                   topic: !secret zendure_topic_u1_select_acMode_set
                   payload: "{{ ac1_should }}"
                   qos: 1
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data:
-                  topic: !secret zendure_topic_u1_select_acMode_set
-                  payload: "{{ ac1_should }}"
-                  qos: 1
               - action: notify.send_message
                 target:
                   entity_id: !secret telegram_id1
@@ -4226,12 +4215,6 @@ automation:
               - variables:
                   ac2_is: "{{ states('sensor.solarflow_2_ac_mode') }}"
                   ac2_should: "{{ states('input_text.zendure_ac_mode_u2') }}"
-              - action: mqtt.publish
-                data:
-                  topic: !secret zendure_topic_u2_select_acMode_set
-                  payload: "{{ ac2_should }}"
-                  qos: 1
-              - delay: "00:00:00.500"
               - action: mqtt.publish
                 data:
                   topic: !secret zendure_topic_u2_select_acMode_set
