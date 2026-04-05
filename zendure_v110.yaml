@@ -1281,18 +1281,25 @@ automation:
     triggers:
       - trigger: time_pattern
         seconds: "/5"
+        id: periodic
       - trigger: numeric_state
         entity_id: !secret power_meter_total_consumption
         above: 150
         for: "00:00:01"
+        id: import_spike
       - trigger: numeric_state
         entity_id: !secret power_meter_total_consumption
         below: -30
         for: "00:00:01"
+        id: export_spike
+      - trigger: state
+        entity_id: !secret power_meter_total_consumption
+        id: meter_step
       - trigger: state
         entity_id:
           - input_boolean.zendure_bypass_u1
           - input_boolean.zendure_bypass_u2
+        id: mode_change
       - trigger: state
         entity_id:
           - input_boolean.zendure_auto_mode
@@ -1302,6 +1309,7 @@ automation:
           - input_boolean.zendure_calib_mode_u2
           - input_boolean.zendure_vguard_u1
           - input_boolean.zendure_vguard_u2
+        id: safety_change
     actions:
       - if:
           - condition: state
@@ -1388,6 +1396,8 @@ automation:
           bypass2: "{{ is_state('input_boolean.zendure_bypass_u2','on') }}"
           s1_solar: "{{ states('sensor.solarflow_1_solar_input') | float(0) if pv_u1_recent | bool else 0 }}"
           s2_solar: "{{ states('sensor.solarflow_2_solar_input') | float(0) if pv_u2_recent | bool else 0 }}"
+          actual_1_raw: "{{ states('sensor.solarflow_1_output_power') | float(0) if s1_ok | bool else 0 }}"
+          actual_2_raw: "{{ states('sensor.solarflow_2_output_power') | float(0) if s2_ok | bool else 0 }}"
 
           calib1: "{{ is_state('input_boolean.zendure_calib_mode_u1', 'on') }}"
           calib2: "{{ is_state('input_boolean.zendure_calib_mode_u2', 'on') }}"
@@ -1401,13 +1411,27 @@ automation:
 
           busy_u1: "{{ calib1 or emerg_u1 or vguard_u1 }}"
           busy_u2: "{{ calib2 or emerg_u2 or vguard_u2 }}"
+          stall_u1: >-
+            {{ s1_ok | bool
+               and not (busy_u1 | bool)
+               and (s1_base | int(0)) >= 120
+               and (actual_1_raw | float(0)) < 20
+               and (time_since_1 | float(0)) > 10
+               and (time_since_1 | float(0)) < 120 }}
+          stall_u2: >-
+            {{ s2_ok | bool
+               and not (busy_u2 | bool)
+               and (s2_base | int(0)) >= 120
+               and (actual_2_raw | float(0)) < 20
+               and (time_since_2 | float(0)) > 10
+               and (time_since_2 | float(0)) < 120 }}
 
           ghost_load_1: "{{ s1_base if (not s1_ok | bool and s1_base > 0) else 0 }}"
           ghost_load_2: "{{ s2_base if (not s2_ok | bool and s2_base > 0) else 0 }}"
           ghost_total: "{{ (ghost_load_1|int(0)) + (ghost_load_2|int(0)) }}"
 
           cap_u1: >
-            {% if not s1_ok|bool or busy_u1 %}0
+            {% if not s1_ok|bool or busy_u1 or stall_u1 %}0
             {% elif calib_isolation and calib_any and not calib1 %}0
             {% elif v1_min < 3.00 %}0
             {% elif soc1_val <= soc_off %}0
@@ -1420,7 +1444,7 @@ automation:
             {% else %}800{% endif %}
 
           cap_u2: >
-            {% if not s2_ok|bool or busy_u2 %}0
+            {% if not s2_ok|bool or busy_u2 or stall_u2 %}0
             {% elif calib_isolation and calib_any and not calib2 %}0
             {% elif v2_min < 3.00 %}0
             {% elif soc2_val <= soc_off %}0
@@ -1454,7 +1478,21 @@ automation:
 
           zen_mode: "{{ (bypass1 or bypass2) }}"
           slider_change: "{{ states('input_number.zendure_conf_min_change') | int(5) }}"
-          min_change: "{{ (slider_change * 4) if zen_mode else slider_change }}"
+          jump_raw: >-
+            {% if trigger.id == 'meter_step' and trigger.from_state is not none and trigger.to_state is not none and is_number(trigger.from_state.state) and is_number(trigger.to_state.state) %}
+              {{ ((trigger.to_state.state | float(0)) - (trigger.from_state.state | float(0))) | abs }}
+            {% else %}
+              0
+            {% endif %}
+          fast_jump_threshold: "{{ [[(hysteresis|int(10) * 2), 30] | max, 120] | min }}"
+          fast_event: "{{ trigger.id == 'meter_step' and (jump_raw | float(0)) >= (fast_jump_threshold | int(30)) }}"
+          fast_push_1: "{{ fast_event and time_since_1 > 1.2 }}"
+          fast_push_2: "{{ fast_event and time_since_2 > 1.2 }}"
+          min_change_base: "{{ (slider_change * 4) if zen_mode else slider_change }}"
+          min_change: "{{ [5, ((min_change_base | int(0)) // 2)] | max if fast_event else min_change_base }}"
+          ac_mode_retry_s: 20
+          ac_mode_u1_cooldown_ok: "{{ (as_timestamp(now()) - as_timestamp(states.input_text.zendure_ac_mode_u1.last_updated, 0)) > ac_mode_retry_s }}"
+          ac_mode_u2_cooldown_ok: "{{ (as_timestamp(now()) - as_timestamp(states.input_text.zendure_ac_mode_u2.last_updated, 0)) > ac_mode_retry_s }}"
 
           override_margin: "{{ [min_change|int(0), 10] | max }}"
           spillover_override: "{{ (floor_1|int(0) > (s1_base|int(0) + override_margin|int(0))) or (floor_2|int(0) > (s2_base|int(0) + override_margin|int(0))) }}"
@@ -1469,8 +1507,8 @@ automation:
           grid: "{{ (states(power_meter_entity) | float(0)) if shelly_ok | bool else 0 }}"
           stale_force_zero_u1: "{{ (not s1_fresh|bool) and (s1_base|int(0) > 0) and ((grid|float(0)) < -80) }}"
           stale_force_zero_u2: "{{ (not s2_fresh|bool) and (s2_base|int(0) > 0) and ((grid|float(0)) < -80) }}"
-          actual_1: "{{ states('sensor.solarflow_1_output_power') | float(0) if s1_ok | bool else 0 }}"
-          actual_2: "{{ states('sensor.solarflow_2_output_power') | float(0) if s2_ok | bool else 0 }}"
+          actual_1: "{{ actual_1_raw | float(0) }}"
+          actual_2: "{{ actual_2_raw | float(0) }}"
           actual_total: "{{ (actual_1 | int(0)) + (actual_2 | int(0)) }}"
 
           busy_actual_1: "{{ actual_1 | int(0) if busy_u1 | bool else 0 }}"
@@ -1505,6 +1543,9 @@ automation:
              or spillover_override
              or drift_recovery_1
              or drift_recovery_2
+             or fast_event
+             or stall_u1
+             or stall_u2
              or states('input_text.zendure_ac_mode_u1') != 'Output mode'
              or states('input_text.zendure_ac_mode_u2') != 'Output mode'
              or ((delta_effective | int(0) | abs) > (hysteresis | int(0)))
@@ -1604,21 +1645,48 @@ automation:
             {% else %} 1
             {% endif %}
 
-          final_1: "{{ (final_1_raw|int(0) * (scale_active|float(1))) | int }}"
-          final_2: "{{ (final_2_raw|int(0) * (scale_active|float(1))) | int }}"
+          final_1_pre: "{{ (final_1_raw|int(0) * (scale_active|float(1))) | int }}"
+          final_2_pre: "{{ (final_2_raw|int(0) * (scale_active|float(1))) | int }}"
 
           heavy_export: "{{ (grid | float(0)) < -40 }}"
-          fast_down_1: "{{ heavy_export and (final_1|int(0) < s1_base|int(0)) }}"
-          fast_down_2: "{{ heavy_export and (final_2|int(0) < s2_base|int(0)) }}"
+          fast_down_1: "{{ heavy_export and (final_1_pre|int(0) < s1_base|int(0)) }}"
+          fast_down_2: "{{ heavy_export and (final_2_pre|int(0) < s2_base|int(0)) }}"
+          max_step_up: "{{ 140 if fast_event else 70 }}"
+          max_step_down: "{{ 220 if (fast_event or heavy_export) else 110 }}"
+          final_1: >-
+            {% set base = s1_base | int(0) %}
+            {% set target = final_1_pre | int(0) %}
+            {% set up = max_step_up | int(70) %}
+            {% set down = max_step_down | int(110) %}
+            {% if target > base + up %}
+              {{ base + up }}
+            {% elif target < base - down %}
+              {{ [base - down, 0] | max }}
+            {% else %}
+              {{ target }}
+            {% endif %}
+          final_2: >-
+            {% set base = s2_base | int(0) %}
+            {% set target = final_2_pre | int(0) %}
+            {% set up = max_step_up | int(70) %}
+            {% set down = max_step_down | int(110) %}
+            {% if target > base + up %}
+              {{ base + up }}
+            {% elif target < base - down %}
+              {{ [base - down, 0] | max }}
+            {% else %}
+              {{ target }}
+            {% endif %}
 
       - parallel:
           # --- UNIT 1 OUTPUT UPDATE ---
           - if:
               - condition: template
                 value_template: >-
-                  {{ s1_ok|bool and not busy_u1 and (not ack_pending_1|bool or fast_down_1|bool or force_zero_u1|bool) and (
+                  {{ s1_ok|bool and not busy_u1 and (not ack_pending_1|bool or fast_down_1|bool or force_zero_u1|bool or fast_push_1|bool) and (
                          fast_down_1|bool
                          or force_zero_u1|bool
+                         or fast_push_1|bool
                          or ((final_1|int(0) - s1_base|int(0))|abs >= (min_change|int(0)))
                          or override_u1
                          or drift_recovery_1
@@ -1629,17 +1697,13 @@ automation:
               - if:
                   - condition: template
                     value_template: >-
-                      {{ states('input_text.zendure_ac_mode_u1') != 'Output mode' or states('sensor.solarflow_1_ac_mode') != 'Output mode' }}
+                      {{ (states('input_text.zendure_ac_mode_u1') != 'Output mode' or states('sensor.solarflow_1_ac_mode') != 'Output mode') and ac_mode_u1_cooldown_ok }}
                 then:
                   - action: input_text.set_value
                     target: { entity_id: input_text.zendure_ac_mode_u1 }
                     data: { value: "Output mode" }
                   - action: mqtt.publish
                     data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:00.500"
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u1_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:01"
               - action: mqtt.publish
                 data: { topic: !secret zendure_topic_u1_number_outputLimit_set, payload: "{{ final_1|int }}", qos: 1 }
               - action: input_number.set_value
@@ -1650,9 +1714,10 @@ automation:
           - if:
               - condition: template
                 value_template: >-
-                  {{ s2_ok|bool and not busy_u2 and (not ack_pending_2|bool or fast_down_2|bool or force_zero_u2|bool) and (
+                  {{ s2_ok|bool and not busy_u2 and (not ack_pending_2|bool or fast_down_2|bool or force_zero_u2|bool or fast_push_2|bool) and (
                          fast_down_2|bool
                          or force_zero_u2|bool
+                         or fast_push_2|bool
                          or ((final_2|int(0) - s2_base|int(0))|abs >= (min_change|int(0)))
                          or override_u2
                          or drift_recovery_2
@@ -1663,17 +1728,13 @@ automation:
               - if:
                   - condition: template
                     value_template: >-
-                      {{ states('input_text.zendure_ac_mode_u2') != 'Output mode' or states('sensor.solarflow_2_ac_mode') != 'Output mode' }}
+                      {{ (states('input_text.zendure_ac_mode_u2') != 'Output mode' or states('sensor.solarflow_2_ac_mode') != 'Output mode') and ac_mode_u2_cooldown_ok }}
                 then:
                   - action: input_text.set_value
                     target: { entity_id: input_text.zendure_ac_mode_u2 }
                     data: { value: "Output mode" }
                   - action: mqtt.publish
                     data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:00.500"
-                  - action: mqtt.publish
-                    data: { topic: !secret zendure_topic_u2_select_acMode_set, payload: "Output mode", qos: 1 }
-                  - delay: "00:00:01"
               - action: mqtt.publish
                 data: { topic: !secret zendure_topic_u2_number_outputLimit_set, payload: "{{ final_2|int }}", qos: 1 }
               - action: input_number.set_value
@@ -4100,12 +4161,6 @@ automation:
                   topic: !secret zendure_topic_u1_select_acMode_set
                   payload: "{{ ac1_should }}"
                   qos: 1
-              - delay: "00:00:00.500"
-              - action: mqtt.publish
-                data:
-                  topic: !secret zendure_topic_u1_select_acMode_set
-                  payload: "{{ ac1_should }}"
-                  qos: 1
               - action: notify.send_message
                 target:
                   entity_id: !secret telegram_id1
@@ -4160,12 +4215,6 @@ automation:
               - variables:
                   ac2_is: "{{ states('sensor.solarflow_2_ac_mode') }}"
                   ac2_should: "{{ states('input_text.zendure_ac_mode_u2') }}"
-              - action: mqtt.publish
-                data:
-                  topic: !secret zendure_topic_u2_select_acMode_set
-                  payload: "{{ ac2_should }}"
-                  qos: 1
-              - delay: "00:00:00.500"
               - action: mqtt.publish
                 data:
                   topic: !secret zendure_topic_u2_select_acMode_set
