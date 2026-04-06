@@ -21,7 +21,9 @@ from paho.mqtt import enums as mqtt_enums
 
 from .const import (
     CONF_APPTOKEN,
+    CONF_DEVICES,
     CONF_HAKEY,
+    CONF_LOCAL_ONLY,
     CONF_MQTTLOG,
     CONF_MQTTPORT,
     CONF_MQTTPSW,
@@ -88,10 +90,13 @@ class Api:
     def Init(self, data: Mapping[str, Any], mqtt: Mapping[str, Any]) -> None:
         """Initialize Zendure Api."""
         Api.mqttLogging = data.get(CONF_MQTTLOG, False)
-        Api.mqttCloud.__init__(mqtt_enums.CallbackAPIVersion.VERSION2, mqtt["clientId"], False, "cloud", mqtt_enums.MQTTProtocolVersion.MQTTv31)
-        url = mqtt["url"]
-        Api.cloudServer, Api.cloudPort = url.rsplit(":", 1) if ":" in url else (url, "1883")
-        self.mqttInit(Api.mqttCloud, Api.cloudServer, Api.cloudPort, mqtt["username"], mqtt["password"])
+        if not data.get(CONF_LOCAL_ONLY, False):
+            Api.mqttCloud.__init__(mqtt_enums.CallbackAPIVersion.VERSION2, mqtt["clientId"], False, "cloud", mqtt_enums.MQTTProtocolVersion.MQTTv31)
+            url = mqtt["url"]
+            Api.cloudServer, Api.cloudPort = url.rsplit(":", 1) if ":" in url else (url, "1883")
+            self.mqttInit(Api.mqttCloud, Api.cloudServer, Api.cloudPort, mqtt["username"], mqtt["password"])
+        else:
+            _LOGGER.info("Local-only mode enabled: cloud MQTT is disabled")
 
         # Get wifi settings
         Api.wifissid = data.get(CONF_WIFISSID, "")
@@ -110,11 +115,23 @@ class Api:
     @staticmethod
     async def Connect(hass: HomeAssistant, data: dict[str, Any], reload: bool) -> dict[str, Any] | None:
         """Connect to the Zendure API."""
-        try:
-            devices = await Api.ApiHA(hass, data)
-        except Exception:  # pylint: disable=broad-except
-            _LOGGER.error("Failed to connect to Zendure API")
-            return None
+        local_devices = data.get(CONF_DEVICES, [])
+        if data.get(CONF_LOCAL_ONLY, False) and len(local_devices) > 0:
+            devices = {
+                "deviceList": local_devices,
+                "mqtt": {
+                    "url": "local-only:1883",
+                    "username": "",
+                    "password": "",
+                    "clientId": "local-only",
+                },
+            }
+        else:
+            try:
+                devices = await Api.ApiHA(hass, data)
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.error("Failed to connect to Zendure API")
+                return None
 
         # Open the storage
         if reload:
@@ -132,6 +149,10 @@ class Api:
     @staticmethod
     async def ApiHA(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any] | None:
         session = async_get_clientsession(hass)
+
+        if data.get(CONF_LOCAL_ONLY, False):
+            _LOGGER.error("Local-only mode requires explicit device definitions")
+            return None
 
         if (token := data.get(CONF_APPTOKEN)) is not None and len(token) > 1:
             base64_url = b64decode(str(token)).decode("utf-8")
