@@ -1498,7 +1498,7 @@ automation:
         entity_id: !secret power_meter_total_consumption
         id: meter_step
       - trigger: time_pattern
-        seconds: "/2"
+        seconds: "/3"
         id: periodic
     actions:
       - if:
@@ -1512,7 +1512,8 @@ automation:
           now_ts: "{{ as_timestamp(now()) | float(0) }}"
           zero_next_ts: "{{ as_timestamp(states('input_datetime.zendure_v132_zero_next'), default=0) | float(0) }}"
           zero_fast_until_ts: "{{ as_timestamp(states('input_datetime.zendure_v132_zero_fast_until'), default=0) | float(0) }}"
-          grid: "{{ states(states('input_text.zendure_power_meter_total_consumption')) | float(0) }}"
+          meter_entity: !secret power_meter_total_consumption
+          grid: "{{ states(meter_entity) | float(0) }}"
           p1_mean: "{{ states('sensor.zendure_p1_mean_30s') | float(grid) }}"
           p1_stddev: "{{ states('sensor.zendure_p1_stddev_30s') | float(0) }}"
           stddev_min: 15
@@ -1643,7 +1644,7 @@ automation:
           - stop: "Meter step too small - skip full loop."
 
       - variables:
-          power_meter_entity: "{{ states('input_text.zendure_power_meter_total_consumption') }}"
+          power_meter_entity: !secret power_meter_total_consumption
           shelly_ok: >-
             {% set meter = power_meter_entity %}
             {% set s = (expand(meter) | first) if meter|length > 0 else none %}
@@ -1857,9 +1858,9 @@ automation:
             {% set meas = actual_1_raw | float(0) %}
             {% set cmd = s1_base | int(0) %}
             {% set lim = s1_out_val | int(0) %}
-            {% set recent_cmd = (time_since_1 | float(0)) < 20 %}
+            {% set recent_cmd = (time_since_1 | float(0)) < 12 %}
             {% set ack_like = (lim >= [cmd - 20, 0] | max) %}
-            {% if cmd >= 80 and recent_cmd and ack_like and (not out_pwr_fresh_1 | bool or meas < (cmd * 0.35)) %}
+            {% if cmd >= 80 and recent_cmd and ack_like and (not out_pwr_fresh_1 | bool or meas < (cmd * 0.25)) %}
               {{ [lim, cmd] | max }}
             {% else %}
               {{ meas }}
@@ -1868,9 +1869,9 @@ automation:
             {% set meas = actual_2_raw | float(0) %}
             {% set cmd = s2_base | int(0) %}
             {% set lim = s2_out_val | int(0) %}
-            {% set recent_cmd = (time_since_2 | float(0)) < 20 %}
+            {% set recent_cmd = (time_since_2 | float(0)) < 12 %}
             {% set ack_like = (lim >= [cmd - 20, 0] | max) %}
-            {% if cmd >= 80 and recent_cmd and ack_like and (not out_pwr_fresh_2 | bool or meas < (cmd * 0.35)) %}
+            {% if cmd >= 80 and recent_cmd and ack_like and (not out_pwr_fresh_2 | bool or meas < (cmd * 0.25)) %}
               {{ [lim, cmd] | max }}
             {% else %}
               {{ meas }}
