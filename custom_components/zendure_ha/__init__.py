@@ -2,18 +2,72 @@
 
 import logging
 
+import voluptuous as vol
+from homeassistant.config_entries import SOURCE_IMPORT
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .api import Api
-from .const import CONF_MQTTLOG, CONF_P1METER, CONF_SIM, DOMAIN
+from .const import (
+    CONF_APPTOKEN,
+    CONF_DEVICES,
+    CONF_LOCAL_ONLY,
+    CONF_MQTTLOCAL,
+    CONF_MQTTLOG,
+    CONF_MQTTPORT,
+    CONF_MQTTPSW,
+    CONF_MQTTSERVER,
+    CONF_MQTTUSER,
+    CONF_P1METER,
+    CONF_SIM,
+    CONF_WIFIPSW,
+    CONF_WIFISSID,
+    DOMAIN,
+)
 from .device import ZendureDevice
 from .manager import ZendureConfigEntry, ZendureManager
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 
 _LOGGER = logging.getLogger(__name__)
+
+YAML_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_APPTOKEN): cv.string,
+        vol.Optional(CONF_P1METER, default="sensor.power_actual"): cv.entity_id,
+        vol.Optional(CONF_MQTTLOG, default=False): cv.boolean,
+        vol.Optional(CONF_MQTTLOCAL, default=True): cv.boolean,
+        vol.Optional(CONF_MQTTSERVER): cv.string,
+        vol.Optional(CONF_MQTTPORT, default=1883): cv.port,
+        vol.Optional(CONF_MQTTUSER): cv.string,
+        vol.Optional(CONF_MQTTPSW): cv.string,
+        vol.Optional(CONF_WIFISSID): cv.string,
+        vol.Optional(CONF_WIFIPSW): cv.string,
+        vol.Optional(CONF_LOCAL_ONLY, default=False): cv.boolean,
+        vol.Optional(CONF_DEVICES, default=[]): vol.All(cv.ensure_list, [dict]),
+    }
+)
+CONFIG_SCHEMA = vol.Schema({DOMAIN: YAML_SCHEMA}, extra=vol.ALLOW_EXTRA)
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up Zendure from YAML and import into a config entry."""
+    if DOMAIN not in config:
+        return True
+
+    if hass.config_entries.async_entries(DOMAIN):
+        _LOGGER.debug("Zendure config entry already exists, skipping YAML import")
+        return True
+
+    yaml_data = YAML_SCHEMA(config[DOMAIN])
+    await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_IMPORT},
+        data=yaml_data,
+    )
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ZendureConfigEntry) -> bool:
