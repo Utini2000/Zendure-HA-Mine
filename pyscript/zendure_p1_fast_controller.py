@@ -27,6 +27,7 @@ TIMEZERO = 4.0
 P1_STDDEV_FACTOR = 3.5
 P1_STDDEV_MIN = 15.0
 MAX_PER_UNIT = 800
+DIRECT_DISPATCH = False  # v131 hybrid mode: False (Guard-Layer is single dispatch owner)
 
 p1_history = deque([25.0, -25.0], maxlen=8)
 zero_next = 0.0
@@ -65,10 +66,28 @@ def _i(entity_id, default=0):
 def _publish_unit(unit: int, watts: int):
     """Dispatch output via existing v130 scripts (keeps !secret MQTT topics in YAML)."""
     watts = max(0, min(MAX_PER_UNIT, int(watts)))
-    if unit == 1:
-        service.call("script", "zendure_dispatch_u1_output", power=watts, ensure_output_mode=True)
-    else:
-        service.call("script", "zendure_dispatch_u2_output", power=watts, ensure_output_mode=True)
+    try:
+        if unit == 1:
+            service.call("script", "zendure_dispatch_u1_output", power=watts, ensure_output_mode=True)
+        else:
+            service.call("script", "zendure_dispatch_u2_output", power=watts, ensure_output_mode=True)
+    except Exception:
+        # Fallback for HA installations where direct script.<name> service dispatch
+        # from pyscript is not available; use script.turn_on + variables.
+        if unit == 1:
+            service.call(
+                "script",
+                "turn_on",
+                entity_id="script.zendure_dispatch_u1_output",
+                variables={"power": watts, "ensure_output_mode": True},
+            )
+        else:
+            service.call(
+                "script",
+                "turn_on",
+                entity_id="script.zendure_dispatch_u2_output",
+                variables={"power": watts, "ensure_output_mode": True},
+            )
 
 
 def _split_total(total: int):
@@ -133,11 +152,12 @@ def _control_once(p1_value: float):
         zero_fast = now + TIMEFAST
         return
 
-    u1, u2 = _split_total(target_total)
-    if abs(u1 - cmd1) >= 8:
-        _publish_unit(1, u1)
-    if abs(u2 - cmd2) >= 8:
-        _publish_unit(2, u2)
+    if DIRECT_DISPATCH:
+        u1, u2 = _split_total(target_total)
+        if abs(u1 - cmd1) >= 8:
+            _publish_unit(1, u1)
+        if abs(u2 - cmd2) >= 8:
+            _publish_unit(2, u2)
 
     service.call("input_number", "set_value", entity_id="input_number.zendure_target_total", value=target_total)
 
