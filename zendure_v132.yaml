@@ -83,6 +83,14 @@ input_datetime:
     name: "Intern: SoC-Drift Referenzzeit U2"
     has_date: true
     has_time: true
+  zendure_v132_zero_next:
+    name: "Intern v132: Zero Next"
+    has_date: true
+    has_time: true
+  zendure_v132_zero_fast_until:
+    name: "Intern v132: Zero Fast Until"
+    has_date: true
+    has_time: true
 input_number:
   zendure_last_sent_1:
     name: "System: Letzter Wert Unit 1"
@@ -784,6 +792,22 @@ sensor:
     max_sub_interval:
       minutes: 1
 
+  - platform: statistics
+    entity_id: !secret power_meter_total_consumption
+    name: "Zendure P1 Mean 30s"
+    state_characteristic: mean
+    sampling_size: 8
+    max_age:
+      seconds: 30
+
+  - platform: statistics
+    entity_id: !secret power_meter_total_consumption
+    name: "Zendure P1 Stddev 30s"
+    state_characteristic: standard_deviation
+    sampling_size: 8
+    max_age:
+      seconds: 30
+
 # ==============================================================================
 # 5. SCRIPTS (RESET/SAFETY HELPERS)
 # ==============================================================================
@@ -1443,7 +1467,28 @@ automation:
             target: { entity_id: input_boolean.zendure_bypass_u2 }
 
   # --- 6.4 CONTROL LOOP ---
-  - alias: "Zendure v132: YAML Master (Fast Target)"
+  - alias: "Zendure v132: Init Fast Gates"
+    id: "zendure_v132_init_fast_gates"
+    mode: single
+    initial_state: true
+    triggers:
+      - trigger: homeassistant
+        event: start
+    actions:
+      - variables:
+          now_ts: "{{ as_timestamp(now()) | float(0) }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.zendure_v132_zero_next
+        data:
+          timestamp: "{{ now_ts }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.zendure_v132_zero_fast_until
+        data:
+          timestamp: "{{ now_ts }}"
+
+  - alias: "Zendure v132: YAML Master (Stddev FastGate)"
     id: "zendure_v132_yaml_master"
     mode: restart
     initial_state: true
@@ -1464,38 +1509,83 @@ automation:
           - stop: "Auto mode off"
 
       - variables:
+          now_ts: "{{ as_timestamp(now()) | float(0) }}"
+          zero_next_ts: "{{ as_timestamp(states('input_datetime.zendure_v132_zero_next'), default=0) | float(0) }}"
+          zero_fast_until_ts: "{{ as_timestamp(states('input_datetime.zendure_v132_zero_fast_until'), default=0) | float(0) }}"
           grid: "{{ states(states('input_text.zendure_power_meter_total_consumption')) | float(0) }}"
-          cmd1: "{{ states('input_number.zendure_last_sent_1') | int(0) }}"
-          cmd2: "{{ states('input_number.zendure_last_sent_2') | int(0) }}"
-          cmd_total: "{{ (cmd1 | int(0)) + (cmd2 | int(0)) }}"
-          out_total: "{{ (states('sensor.solarflow_1_output_power')|int(0)) + (states('sensor.solarflow_2_output_power')|int(0)) }}"
-          control_total: "{{ ((cmd_total | int(0)) * 0.75 + (out_total | int(0)) * 0.25) | int(0) }}"
+          p1_mean: "{{ states('sensor.zendure_p1_mean_30s') | float(grid) }}"
+          p1_stddev: "{{ states('sensor.zendure_p1_stddev_30s') | float(0) }}"
+          stddev_min: 15
+          stddev_factor: 3.5
+          fast_threshold: "{{ (stddev_factor | float(3.5)) * ([stddev_min | float(15), p1_stddev | float(0)] | max) }}"
           jump: >-
             {% if trigger.id == 'meter_step' and trigger.from_state is not none and trigger.to_state is not none and is_number(trigger.from_state.state) and is_number(trigger.to_state.state) %}
               {{ ((trigger.to_state.state | float(0)) - (trigger.from_state.state | float(0))) | abs }}
             {% else %}
               0
             {% endif %}
-          fast_event: "{{ jump | float(0) >= 30 }}"
+          is_fast: "{{ ((grid - p1_mean) | abs) > (fast_threshold | float(0)) or (jump | float(0)) >= 30 }}"
+
+      - if:
+          - condition: template
+            value_template: "{{ now_ts < zero_fast_until_ts }}"
+        then:
+          - stop: "Fast gate active"
+
+      - if:
+          - condition: template
+            value_template: "{{ (not is_fast) and (now_ts <= zero_next_ts) }}"
+        then:
+          - stop: "Normal gate active"
+
+      - variables:
+          cmd1: "{{ states('input_number.zendure_last_sent_1') | int(0) }}"
+          cmd2: "{{ states('input_number.zendure_last_sent_2') | int(0) }}"
+          cmd_total: "{{ (cmd1 | int(0)) + (cmd2 | int(0)) }}"
+          out_total: "{{ (states('sensor.solarflow_1_output_power')|int(0)) + (states('sensor.solarflow_2_output_power')|int(0)) }}"
+          control_total: "{{ ((cmd_total | int(0)) * 0.75 + (out_total | int(0)) * 0.25) | int(0) }}"
           hysteresis_base: "{{ states('input_number.zendure_conf_hysteresis') | int(8) }}"
-          hysteresis: "{{ [2, ((hysteresis_base | int(0)) // 2)] | max if fast_event else hysteresis_base }}"
+          hysteresis: "{{ [2, ((hysteresis_base | int(0)) // 2)] | max if is_fast else hysteresis_base }}"
           grid_bias: "{{ states('input_number.zendure_conf_grid_bias') | int(10) }}"
           max_total: "{{ states('input_number.zendure_conf_max_output') | int(1200) }}"
           target_raw: "{{ (control_total | int(0)) + (grid | int(0)) - (grid_bias | int(0)) }}"
           target_total: "{{ [[target_raw | int(0), 0] | max, max_total | int(0)] | min }}"
           current_target: "{{ states('input_number.zendure_target_total') | int(0) }}"
+
       - if:
           - condition: template
-            value_template: "{{ not fast_event and ((target_total|int(0) - current_target|int(0)) | abs) <= (hysteresis|int(0)) }}"
+            value_template: "{{ (not is_fast) and (((target_total|int(0) - current_target|int(0)) | abs) <= (hysteresis|int(0))) }}"
         then:
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: input_datetime.zendure_v132_zero_next
+            data:
+              timestamp: "{{ now_ts + 4.0 }}"
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: input_datetime.zendure_v132_zero_fast_until
+            data:
+              timestamp: "{{ now_ts + 2.2 }}"
           - stop: "Inside deadband"
+
       - action: input_number.set_value
         target:
           entity_id: input_number.zendure_target_total
         data:
           value: "{{ target_total }}"
 
-  - alias: "Zendure v131: Guard Layer (Master=YAML/PyScript)"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.zendure_v132_zero_next
+        data:
+          timestamp: "{{ now_ts + 4.0 }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.zendure_v132_zero_fast_until
+        data:
+          timestamp: "{{ now_ts + 2.2 }}"
+
+  - alias: "Zendure v132: Guard Layer (Master=YAML/PyScript)"
     id: "zendure_v131_guard_layer"
     mode: restart
     initial_state: true
