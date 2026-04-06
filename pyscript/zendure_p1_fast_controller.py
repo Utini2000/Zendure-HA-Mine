@@ -95,7 +95,13 @@ def _control_once(p1_value: float):
 
     # Stddev based fast detection
     avg = sum(p1_history) / len(p1_history) if len(p1_history) else p1_value
-    variance = sum((x - avg) ** 2 for x in p1_history) / len(p1_history) if len(p1_history) else 0.0
+    if len(p1_history):
+        var_acc = 0.0
+        for x in p1_history:
+            var_acc += (x - avg) ** 2
+        variance = var_acc / len(p1_history)
+    else:
+        variance = 0.0
     stddev = P1_STDDEV_FACTOR * max(P1_STDDEV_MIN, sqrt(variance))
     is_fast = abs(p1_value - avg) > stddev or (len(p1_history) > 0 and abs(p1_value - p1_history[0]) > stddev)
     if is_fast:
