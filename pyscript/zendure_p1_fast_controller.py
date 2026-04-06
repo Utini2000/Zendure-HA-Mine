@@ -4,7 +4,7 @@ Zendure P1 Fast Controller (pyscript)
 Requirements:
 - Home Assistant integration "pyscript" installed
 - Entities from Zendure MQTT setup are available:
-  - sensor.power_actual
+  - P1 Entity (default sensor.power_actual, optional via input_text.zendure_power_meter_total_consumption)
   - sensor.solarflow_1_battery_level
   - sensor.solarflow_2_battery_level
 - Scripts from zendure_v130.yaml:
@@ -39,6 +39,19 @@ def _f(entity_id, default=0.0):
         return float(state.get(entity_id))
     except Exception:
         return float(default)
+
+
+def _p1_entity():
+    """Return configured P1 entity id."""
+    candidate = str(state.get("input_text.zendure_power_meter_total_consumption") or "").strip()
+    if candidate.startswith("sensor."):
+        return candidate
+    return "sensor.power_actual"
+
+
+def _p1_value():
+    """Read current P1 value from configured entity."""
+    return _f(_p1_entity(), 0.0)
 
 
 def _i(entity_id, default=0):
@@ -120,11 +133,14 @@ def _control_once(p1_value: float):
     if abs(u2 - cmd2) >= 8:
         _publish_unit(2, u2)
 
+    service.call("input_number", "set_value", entity_id="input_number.zendure_target_total", value=target_total)
+
     zero_next = now + TIMEZERO
     zero_fast = now + TIMEFAST
 
 
 @state_trigger("sensor.power_actual")
+@state_trigger("sensor.power_meter_total_consumption")
 def zendure_p1_on_change(value=None, old_value=None):
     """Handle P1 state changes."""
     if state.get("input_boolean.zendure_auto_mode") != "on":
@@ -132,7 +148,7 @@ def zendure_p1_on_change(value=None, old_value=None):
     try:
         p1 = float(value)
     except Exception:
-        p1 = _f("sensor.power_actual", 0.0)
+        p1 = _p1_value()
     _control_once(p1)
 
 
@@ -141,4 +157,4 @@ def zendure_p1_periodic():
     """Fallback periodic controller tick."""
     if state.get("input_boolean.zendure_auto_mode") != "on":
         return
-    _control_once(_f("sensor.power_actual", 0.0))
+    _control_once(_p1_value())
