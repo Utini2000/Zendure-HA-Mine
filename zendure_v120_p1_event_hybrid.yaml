@@ -1,0 +1,254 @@
+# ==============================================================================
+# Zendure v120 - P1 Event Hybrid Controller (YAML-only)
+# ------------------------------------------------------------------------------
+# Ziel:
+# - Sehr schnelle Nachregelung bei Lastwechseln (P1 state-change getrieben)
+# - Kein Warten auf träges output_power als primäre Führungsgröße
+# - Safety/Cap-Logik bleibt in YAML
+#
+# Voraussetzungen:
+# - MQTT Entitäten/Sensoren für beide Units vorhanden (wie in v110)
+# - sensor.power_actual (oder eigener P1-Sensor) liefert schnelle Updates
+# - secrets.yaml enthält die beiden outputLimit set topics
+# ==============================================================================
+
+input_boolean:
+  zendure_auto_mode:
+    name: "Zendure Auto Mode"
+    initial: on
+    icon: mdi:robot
+
+input_number:
+  zendure_target_total:
+    name: "Zendure Target Total"
+    min: 0
+    max: 1600
+    step: 1
+    mode: box
+    unit_of_measurement: W
+    initial: 0
+  zendure_last_sent_1:
+    name: "Zendure Last Sent U1"
+    min: 0
+    max: 800
+    step: 1
+    mode: box
+    unit_of_measurement: W
+    initial: 0
+  zendure_last_sent_2:
+    name: "Zendure Last Sent U2"
+    min: 0
+    max: 800
+    step: 1
+    mode: box
+    unit_of_measurement: W
+    initial: 0
+  zendure_conf_grid_bias:
+    name: "Zendure Grid Bias"
+    min: -100
+    max: 100
+    step: 1
+    mode: box
+    unit_of_measurement: W
+    initial: 10
+  zendure_conf_hysteresis:
+    name: "Zendure Hysteresis"
+    min: 0
+    max: 50
+    step: 1
+    mode: box
+    unit_of_measurement: W
+    initial: 8
+  zendure_conf_max_total:
+    name: "Zendure Max Total"
+    min: 0
+    max: 1600
+    step: 10
+    mode: box
+    unit_of_measurement: W
+    initial: 1200
+
+script:
+  zendure_dispatch_u1_output:
+    alias: Zendure Dispatch U1
+    mode: queued
+    sequence:
+      - variables:
+          target: "{{ [[(power | int(0)),0]|max,800]|min }}"
+      - service: mqtt.publish
+        data:
+          topic: !secret zendure_topic_u1_number_outputLimit_set
+          payload: "{{ target }}"
+          qos: 1
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.zendure_last_sent_1
+        data:
+          value: "{{ target }}"
+
+  zendure_dispatch_u2_output:
+    alias: Zendure Dispatch U2
+    mode: queued
+    sequence:
+      - variables:
+          target: "{{ [[(power | int(0)),0]|max,800]|min }}"
+      - service: mqtt.publish
+        data:
+          topic: !secret zendure_topic_u2_number_outputLimit_set
+          payload: "{{ target }}"
+          qos: 1
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.zendure_last_sent_2
+        data:
+          value: "{{ target }}"
+
+automation:
+  # ---------------------------------------------------------------------------
+  # A) P1 Event Core
+  # ---------------------------------------------------------------------------
+  - alias: "Zendure v120: P1 Event Core"
+    id: "zendure_v120_p1_event_core"
+    mode: restart
+    max_exceeded: silent
+    triggers:
+      - trigger: state
+        entity_id: sensor.power_actual
+        id: meter_step
+      - trigger: time_pattern
+        seconds: "/2"
+        id: periodic
+      - trigger: homeassistant
+        event: start
+        id: boot
+    conditions:
+      - condition: state
+        entity_id: input_boolean.zendure_auto_mode
+        state: "on"
+    actions:
+      - variables:
+          grid: "{{ states('sensor.power_actual') | float(0) }}"
+          bias: "{{ states('input_number.zendure_conf_grid_bias') | int(10) }}"
+          hysteresis: "{{ states('input_number.zendure_conf_hysteresis') | int(8) }}"
+          max_total: "{{ states('input_number.zendure_conf_max_total') | int(1200) }}"
+
+          cmd_u1: "{{ states('input_number.zendure_last_sent_1') | int(0) }}"
+          cmd_u2: "{{ states('input_number.zendure_last_sent_2') | int(0) }}"
+          cmd_total: "{{ (cmd_u1 | int(0)) + (cmd_u2 | int(0)) }}"
+
+          out_u1: "{{ states('sensor.solarflow_1_output_limit') | int(cmd_u1) }}"
+          out_u2: "{{ states('sensor.solarflow_2_output_limit') | int(cmd_u2) }}"
+          out_total: "{{ (out_u1 | int(0)) + (out_u2 | int(0)) }}"
+
+          pwr_u1: "{{ states('sensor.solarflow_1_output_power') | float(0) }}"
+          pwr_u2: "{{ states('sensor.solarflow_2_output_power') | float(0) }}"
+          pwr_total: "{{ (pwr_u1 | int(0)) + (pwr_u2 | int(0)) }}"
+
+          ts1: "{{ as_timestamp(states.input_number.zendure_last_sent_1.last_updated, 0) }}"
+          ts2: "{{ as_timestamp(states.input_number.zendure_last_sent_2.last_updated, 0) }}"
+          age_cmd_1: "{{ as_timestamp(now()) - ts1 }}"
+          age_cmd_2: "{{ as_timestamp(now()) - ts2 }}"
+          recent_cmd: "{{ age_cmd_1 < 20 or age_cmd_2 < 20 }}"
+
+          tracking_unreliable: "{{ recent_cmd and (((pwr_total | int(0)) - (cmd_total | int(0))) | abs > 220) }}"
+          control_total: "{{ cmd_total if tracking_unreliable else ((cmd_total * 0.75 + pwr_total * 0.25) | int(0)) }}"
+
+          target_raw: "{{ (control_total | int(0)) + (grid | int(0)) - (bias | int(0)) }}"
+          target_total: "{{ [[target_raw | int(0), 0] | max, max_total | int(0)] | min }}"
+          delta: "{{ (target_total | int(0)) - (control_total | int(0)) }}"
+
+      - if:
+          - condition: template
+            value_template: "{{ trigger.id == 'meter_step' and (trigger.from_state is not none) and (trigger.to_state is not none) and (((trigger.to_state.state | float(0)) - (trigger.from_state.state | float(0))) | abs < 12) }}"
+        then:
+          - stop: "Ignore tiny P1 jitter"
+
+      - if:
+          - condition: template
+            value_template: "{{ (delta | int(0) | abs) <= (hysteresis | int(0)) and trigger.id != 'boot' }}"
+        then:
+          - stop: "Inside deadband"
+
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.zendure_target_total
+        data:
+          value: "{{ target_total }}"
+
+  # ---------------------------------------------------------------------------
+  # B) Splitter + Dispatch (SOC-basiert, command-first)
+  # ---------------------------------------------------------------------------
+  - alias: "Zendure v120: Split + Dispatch"
+    id: "zendure_v120_split_dispatch"
+    mode: restart
+    max_exceeded: silent
+    triggers:
+      - trigger: state
+        entity_id: input_number.zendure_target_total
+      - trigger: time_pattern
+        seconds: "/2"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.zendure_auto_mode
+        state: "on"
+    actions:
+      - variables:
+          target_total: "{{ states('input_number.zendure_target_total') | int(0) }}"
+          soc1: "{{ states('sensor.solarflow_1_battery_level') | float(50) }}"
+          soc2: "{{ states('sensor.solarflow_2_battery_level') | float(50) }}"
+          sum_soc: "{{ (soc1 | float(0)) + (soc2 | float(0)) }}"
+          w1: "{{ (soc1 / sum_soc) if (sum_soc | float(0)) > 0 else 0.5 }}"
+          req1: "{{ (target_total | int(0) * w1) | int(0) }}"
+          req2: "{{ (target_total | int(0)) - (req1 | int(0)) }}"
+
+          cap1: "{{ 800 if has_value('sensor.solarflow_1_status_raw') else 0 }}"
+          cap2: "{{ 800 if has_value('sensor.solarflow_2_status_raw') else 0 }}"
+          final1: "{{ [[req1 | int(0), 0] | max, cap1 | int(0)] | min }}"
+          final2_raw: "{{ [[req2 | int(0), 0] | max, cap2 | int(0)] | min }}"
+          overflow: "{{ (target_total | int(0)) - ((final1 | int(0)) + (final2_raw | int(0))) }}"
+          final2: "{{ [[(final2_raw | int(0)) + (overflow | int(0)), 0] | max, cap2 | int(0)] | min }}"
+
+          cmd1: "{{ states('input_number.zendure_last_sent_1') | int(0) }}"
+          cmd2: "{{ states('input_number.zendure_last_sent_2') | int(0) }}"
+      - parallel:
+          - if:
+              - condition: template
+                value_template: "{{ ((final1 | int(0)) - (cmd1 | int(0))) | abs >= 8 }}"
+            then:
+              - action: script.zendure_dispatch_u1_output
+                data:
+                  power: "{{ final1 }}"
+          - if:
+              - condition: template
+                value_template: "{{ ((final2 | int(0)) - (cmd2 | int(0))) | abs >= 8 }}"
+            then:
+              - action: script.zendure_dispatch_u2_output
+                data:
+                  power: "{{ final2 }}"
+
+  # ---------------------------------------------------------------------------
+  # C) Safety Zero Clamp bei fehlenden Daten
+  # ---------------------------------------------------------------------------
+  - alias: "Zendure v120: Safety Clamp"
+    id: "zendure_v120_safety_clamp"
+    mode: single
+    triggers:
+      - trigger: time_pattern
+        seconds: "/10"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.zendure_auto_mode
+        state: "on"
+    actions:
+      - variables:
+          p1_ok: "{{ has_value('sensor.power_actual') }}"
+      - if:
+          - condition: template
+            value_template: "{{ not p1_ok }}"
+        then:
+          - action: script.zendure_dispatch_u1_output
+            data:
+              power: 0
+          - action: script.zendure_dispatch_u2_output
+            data:
+              power: 0
