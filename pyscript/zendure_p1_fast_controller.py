@@ -152,7 +152,7 @@ def zendure_p1_on_change(value=None, old_value=None):
     _control_once(p1)
 
 
-@time_trigger("period(2s)")
+@time_trigger("period(now, 2s)")
 def zendure_p1_periodic():
     """Fallback periodic controller tick."""
     if state.get("input_boolean.zendure_auto_mode") != "on":
