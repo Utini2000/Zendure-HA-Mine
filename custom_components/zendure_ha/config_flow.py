@@ -14,6 +14,8 @@ from homeassistant.helpers import selector
 from .api import Api
 from .const import (
     CONF_APPTOKEN,
+    CONF_DEVICES,
+    CONF_LOCAL_ONLY,
     CONF_AUTO_MQTT_USER,
     CONF_MQTTLOCAL,
     CONF_MQTTLOG,
@@ -40,10 +42,11 @@ class ZendureConfigFlow(ConfigFlow, domain=DOMAIN):
     _input_data: dict[str, Any]
     data_schema = vol.Schema(
         {
-            vol.Required(CONF_APPTOKEN): str,
+            vol.Required(CONF_APPTOKEN, default=""): str,
             vol.Required(CONF_P1METER, description={"suggested_value": "sensor.power_actual"}): selector.EntitySelector(),
             vol.Required(CONF_MQTTLOG): bool,
             vol.Required(CONF_MQTTLOCAL): bool,
+            vol.Optional(CONF_LOCAL_ONLY, default=False): bool,
         }
     )
     mqtt_schema = vol.Schema(
@@ -63,6 +66,7 @@ class ZendureConfigFlow(ConfigFlow, domain=DOMAIN):
                     type=selector.TextSelectorType.PASSWORD,
                 ),
             ),
+            vol.Optional(CONF_DEVICES, default=[]): selector.ObjectSelector(),
         }
     )
 
@@ -92,6 +96,26 @@ class ZendureConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = f"invalid input {err}"
 
         return self.async_show_form(step_id="user", data_schema=self.data_schema, errors=errors)
+
+    async def async_step_import(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle YAML import."""
+        if user_input is None:
+            return self.async_abort(reason="invalid_input")
+
+        # Ensure local mode gets a local mqtt server by default
+        if user_input.get(CONF_LOCAL_ONLY, False):
+            user_input.setdefault(CONF_MQTTLOCAL, True)
+
+        try:
+            if await Api.Connect(self.hass, user_input, False) is None:
+                return self.async_abort(reason="cannot_connect")
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.error(f"Import failed: {err}")
+            return self.async_abort(reason="cannot_connect")
+
+        await self.async_set_unique_id("Zendure", raise_on_progress=False)
+        self._abort_if_unique_id_configured(updates=user_input)
+        return self.async_create_entry(title="Zendure", data=user_input)
 
     async def async_step_local(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
