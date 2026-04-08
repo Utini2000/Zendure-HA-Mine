@@ -83,6 +83,14 @@ input_datetime:
     name: "Intern: SoC-Drift Referenzzeit U2"
     has_date: true
     has_time: true
+  zendure_v132_zero_next:
+    name: "Intern v132: Zero Next"
+    has_date: true
+    has_time: true
+  zendure_v132_zero_fast_until:
+    name: "Intern v132: Zero Fast Until"
+    has_date: true
+    has_time: true
 input_number:
   zendure_last_sent_1:
     name: "System: Letzter Wert Unit 1"
@@ -98,6 +106,14 @@ input_number:
     step: 1
     mode: box
     initial: 0
+  zendure_target_total:
+    name: "Zendure: Fast-Target Gesamt"
+    min: 0
+    max: 1600
+    step: 1
+    mode: box
+    initial: 0
+    unit_of_measurement: "W"
   zendure_soc_drift_ref_u1:
     name: "Intern: SoC-Drift Referenz U1"
     min: 0
@@ -776,6 +792,22 @@ sensor:
     max_sub_interval:
       minutes: 1
 
+  - platform: statistics
+    entity_id: !secret power_meter_total_consumption
+    name: "Zendure P1 Mean 30s"
+    state_characteristic: mean
+    sampling_size: 8
+    max_age:
+      seconds: 30
+
+  - platform: statistics
+    entity_id: !secret power_meter_total_consumption
+    name: "Zendure P1 Stddev 30s"
+    state_characteristic: standard_deviation
+    sampling_size: 8
+    max_age:
+      seconds: 30
+
 # ==============================================================================
 # 5. SCRIPTS (RESET/SAFETY HELPERS)
 # ==============================================================================
@@ -1435,8 +1467,127 @@ automation:
             target: { entity_id: input_boolean.zendure_bypass_u2 }
 
   # --- 6.4 CONTROL LOOP ---
-  - alias: "Zendure: Control Loop (Dual)"
-    id: "zendure_control_loop_dual"
+  - alias: "Zendure v132: Init Fast Gates"
+    id: "zendure_v132_init_fast_gates"
+    mode: single
+    initial_state: true
+    triggers:
+      - trigger: homeassistant
+        event: start
+    actions:
+      - variables:
+          now_ts: "{{ as_timestamp(now()) | float(0) }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.zendure_v132_zero_next
+        data:
+          timestamp: "{{ now_ts }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.zendure_v132_zero_fast_until
+        data:
+          timestamp: "{{ now_ts }}"
+
+  - alias: "Zendure v132: YAML Master (Stddev FastGate)"
+    id: "zendure_v132_yaml_master"
+    mode: restart
+    initial_state: true
+    max_exceeded: silent
+    triggers:
+      - trigger: state
+        entity_id: !secret power_meter_total_consumption
+        id: meter_step
+      - trigger: time_pattern
+        seconds: "/3"
+        id: periodic
+    actions:
+      - if:
+          - condition: state
+            entity_id: input_boolean.zendure_auto_mode
+            state: "off"
+        then:
+          - stop: "Auto mode off"
+
+      - variables:
+          now_ts: "{{ as_timestamp(now()) | float(0) }}"
+          zero_next_ts: "{{ as_timestamp(states('input_datetime.zendure_v132_zero_next'), default=0) | float(0) }}"
+          zero_fast_until_ts: "{{ as_timestamp(states('input_datetime.zendure_v132_zero_fast_until'), default=0) | float(0) }}"
+          meter_entity: !secret power_meter_total_consumption
+          grid: "{{ states(meter_entity) | float(0) }}"
+          p1_mean: "{{ states('sensor.zendure_p1_mean_30s') | float(grid) }}"
+          p1_stddev: "{{ states('sensor.zendure_p1_stddev_30s') | float(0) }}"
+          stddev_min: 15
+          stddev_factor: 3.5
+          fast_threshold: "{{ (stddev_factor | float(3.5)) * ([stddev_min | float(15), p1_stddev | float(0)] | max) }}"
+          jump: >-
+            {% if trigger.id == 'meter_step' and trigger.from_state is not none and trigger.to_state is not none and is_number(trigger.from_state.state) and is_number(trigger.to_state.state) %}
+              {{ ((trigger.to_state.state | float(0)) - (trigger.from_state.state | float(0))) | abs }}
+            {% else %}
+              0
+            {% endif %}
+          is_fast: "{{ ((grid - p1_mean) | abs) > (fast_threshold | float(0)) or (jump | float(0)) >= 30 }}"
+
+      - if:
+          - condition: template
+            value_template: "{{ now_ts < zero_fast_until_ts }}"
+        then:
+          - stop: "Fast gate active"
+
+      - if:
+          - condition: template
+            value_template: "{{ (not is_fast) and (now_ts <= zero_next_ts) }}"
+        then:
+          - stop: "Normal gate active"
+
+      - variables:
+          cmd1: "{{ states('input_number.zendure_last_sent_1') | int(0) }}"
+          cmd2: "{{ states('input_number.zendure_last_sent_2') | int(0) }}"
+          cmd_total: "{{ (cmd1 | int(0)) + (cmd2 | int(0)) }}"
+          out_total: "{{ (states('sensor.solarflow_1_output_power')|int(0)) + (states('sensor.solarflow_2_output_power')|int(0)) }}"
+          control_total: "{{ ((cmd_total | int(0)) * 0.75 + (out_total | int(0)) * 0.25) | int(0) }}"
+          hysteresis_base: "{{ states('input_number.zendure_conf_hysteresis') | int(8) }}"
+          hysteresis: "{{ [2, ((hysteresis_base | int(0)) // 2)] | max if is_fast else hysteresis_base }}"
+          grid_bias: "{{ states('input_number.zendure_conf_grid_bias') | int(10) }}"
+          max_total: "{{ states('input_number.zendure_conf_max_output') | int(1200) }}"
+          target_raw: "{{ (control_total | int(0)) + (grid | int(0)) - (grid_bias | int(0)) }}"
+          target_total: "{{ [[target_raw | int(0), 0] | max, max_total | int(0)] | min }}"
+          current_target: "{{ states('input_number.zendure_target_total') | int(0) }}"
+
+      - if:
+          - condition: template
+            value_template: "{{ (not is_fast) and (((target_total|int(0) - current_target|int(0)) | abs) <= (hysteresis|int(0))) }}"
+        then:
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: input_datetime.zendure_v132_zero_next
+            data:
+              timestamp: "{{ now_ts + 4.0 }}"
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: input_datetime.zendure_v132_zero_fast_until
+            data:
+              timestamp: "{{ now_ts + 2.2 }}"
+          - stop: "Inside deadband"
+
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.zendure_target_total
+        data:
+          value: "{{ target_total }}"
+
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.zendure_v132_zero_next
+        data:
+          timestamp: "{{ now_ts + 4.0 }}"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.zendure_v132_zero_fast_until
+        data:
+          timestamp: "{{ now_ts + 2.2 }}"
+
+  - alias: "Zendure v132: Guard Layer (v110 Advanced)"
+    id: "zendure_v132_guard_layer"
     mode: restart
     initial_state: true
     max_exceeded: silent
@@ -1493,7 +1644,7 @@ automation:
           - stop: "Meter step too small - skip full loop."
 
       - variables:
-          power_meter_entity: "{{ states('input_text.zendure_power_meter_total_consumption') }}"
+          power_meter_entity: !secret power_meter_total_consumption
           shelly_ok: >-
             {% set meter = power_meter_entity %}
             {% set s = (expand(meter) | first) if meter|length > 0 else none %}
@@ -1707,9 +1858,9 @@ automation:
             {% set meas = actual_1_raw | float(0) %}
             {% set cmd = s1_base | int(0) %}
             {% set lim = s1_out_val | int(0) %}
-            {% set recent_cmd = (time_since_1 | float(0)) < 20 %}
+            {% set recent_cmd = (time_since_1 | float(0)) < 12 %}
             {% set ack_like = (lim >= [cmd - 20, 0] | max) %}
-            {% if cmd >= 80 and recent_cmd and ack_like and (not out_pwr_fresh_1 | bool or meas < (cmd * 0.35)) %}
+            {% if cmd >= 80 and recent_cmd and ack_like and (not out_pwr_fresh_1 | bool or meas < (cmd * 0.25)) %}
               {{ [lim, cmd] | max }}
             {% else %}
               {{ meas }}
@@ -1718,9 +1869,9 @@ automation:
             {% set meas = actual_2_raw | float(0) %}
             {% set cmd = s2_base | int(0) %}
             {% set lim = s2_out_val | int(0) %}
-            {% set recent_cmd = (time_since_2 | float(0)) < 20 %}
+            {% set recent_cmd = (time_since_2 | float(0)) < 12 %}
             {% set ack_like = (lim >= [cmd - 20, 0] | max) %}
-            {% if cmd >= 80 and recent_cmd and ack_like and (not out_pwr_fresh_2 | bool or meas < (cmd * 0.35)) %}
+            {% if cmd >= 80 and recent_cmd and ack_like and (not out_pwr_fresh_2 | bool or meas < (cmd * 0.25)) %}
               {{ [lim, cmd] | max }}
             {% else %}
               {{ meas }}
@@ -1902,6 +2053,9 @@ automation:
             {% else %}
               {{ target }}
             {% endif %}
+          start_min_output: 30
+          final_1_eff: "{{ 0 if (final_1|int(0) < start_min_output|int(30)) else final_1|int(0) }}"
+          final_2_eff: "{{ 0 if (final_2|int(0) < start_min_output|int(30)) else final_2|int(0) }}"
 
       - parallel:
           # --- UNIT 1 OUTPUT UPDATE ---
@@ -1912,16 +2066,16 @@ automation:
                          fast_down_1|bool
                          or force_zero_u1|bool
                          or fast_push_1|bool
-                         or ((final_1|int(0) - s1_base|int(0))|abs >= (min_change|int(0)))
+                         or ((final_1_eff|int(0) - s1_base|int(0))|abs >= (min_change|int(0)))
                          or override_u1
                          or drift_recovery_1
                          or states('input_text.zendure_ac_mode_u1') != 'Output mode'
-                         or ((actual_total|int(0) > global_max|int(0)) and (s1_base|int(0) > final_1|int(0)))
+                         or ((actual_total|int(0) > global_max|int(0)) and (s1_base|int(0) > final_1_eff|int(0)))
                        ) }}
             then:
               - action: script.zendure_dispatch_u1_output
                 data:
-                  power: "{{ final_1|int }}"
+                  power: "{{ final_1_eff|int }}"
                   ensure_output_mode: true
 
           # --- UNIT 2 OUTPUT UPDATE ---
@@ -1932,16 +2086,16 @@ automation:
                          fast_down_2|bool
                          or force_zero_u2|bool
                          or fast_push_2|bool
-                         or ((final_2|int(0) - s2_base|int(0))|abs >= (min_change|int(0)))
+                         or ((final_2_eff|int(0) - s2_base|int(0))|abs >= (min_change|int(0)))
                          or override_u2
                          or drift_recovery_2
                          or states('input_text.zendure_ac_mode_u2') != 'Output mode'
-                         or ((actual_total|int(0) > global_max|int(0)) and (s2_base|int(0) > final_2|int(0)))
+                         or ((actual_total|int(0) > global_max|int(0)) and (s2_base|int(0) > final_2_eff|int(0)))
                        ) }}
             then:
               - action: script.zendure_dispatch_u2_output
                 data:
-                  power: "{{ final_2|int }}"
+                  power: "{{ final_2_eff|int }}"
                   ensure_output_mode: true
 
           # --- UNIT 1 STALE BEST-EFFORT 0W CLAMP ---
