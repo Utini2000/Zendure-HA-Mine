@@ -1,0 +1,164 @@
+# ==============================================================================
+# Zendure Devices Inventory (example template)
+# ==============================================================================
+# Zweck:
+# - Zentrale Inventar-Datei für lokale Zendure-Setups.
+# - Kann später von v132 (oder anderen YAML-Stacks) eingelesen werden.
+#
+# Mindestfelder für den aktuellen local_only-Import (Integration):
+#   deviceKey, productModel, deviceName, deviceSn
+#
+# Hinweise:
+# - productModel sollte exakt zu einem unterstützten Modellnamen passen.
+# - Nicht benötigte Beispiel-Devices einfach löschen oder enabled: false setzen.
+# - Die optionalen Leistungs-/Kapazitätsfelder sind für zukünftige Regler-Logik gedacht.
+# ==============================================================================
+
+inventory_version: 1
+site_name: "My Zendure Site"
+defaults:
+  enabled: true
+  timezone: "Europe/Berlin"
+
+# Unterstützte productModel-Namen (laut Integration-Mapping):
+# - ace 1500
+# - aio 2400
+# - solarflow aio zy
+# - hub 1200
+# - solarflow2.0
+# - hub 2000
+# - solarflow hub 2000
+# - hyper 2000
+# - hyper2000_3.0
+# - solarflow 800
+# - solarflow 800 pro
+# - solarflow 800 plus
+# - solarflow 1600 ac+
+# - solarflow 2400 ac
+# - solarflow 2400 ac+
+# - solarflow 2400 pro
+# - superbase v6400
+# - superbase v4600
+
+devices:
+  # ---------------------------------------------------------------------------
+  # EXAMPLE 1: SolarFlow 800 Pro + 2x Erweiterungsbatterie
+  # ---------------------------------------------------------------------------
+  - enabled: true
+    role: "inverter"
+    location: "Balkon Süd"
+
+    # Pflichtfelder (aktueller local_only Import):
+    deviceKey: "REPLACE_DEVICE_ID_800PRO"
+    productModel: "solarflow 800 pro"
+    deviceName: "SolarFlow 800 Pro Balkon"
+    deviceSn: "REPLACE_SN_800PRO"
+
+    # Optional (für zukünftige Regler/Inventar-Logik):
+    rated_output_w: 800
+    rated_input_w: 1200
+    max_charge_w: 1200
+    max_discharge_w: 800
+
+    battery_bank:
+      chemistry: "LiFePO4"
+      modules:
+        - moduleSn: "REPLACE_BAT_SN_1"
+          model: "AB1000"
+          nominal_capacity_wh: 960
+          usable_capacity_wh: 896
+        - moduleSn: "REPLACE_BAT_SN_2"
+          model: "AB1000"
+          nominal_capacity_wh: 960
+          usable_capacity_wh: 896
+
+  # ---------------------------------------------------------------------------
+  # EXAMPLE 2: SolarFlow 800 Plus + 1x Erweiterungsbatterie
+  # ---------------------------------------------------------------------------
+  - enabled: false
+    role: "inverter"
+    location: "Gartenhaus"
+    deviceKey: "REPLACE_DEVICE_ID_800PLUS"
+    productModel: "solarflow 800 plus"
+    deviceName: "SolarFlow 800 Plus Garten"
+    deviceSn: "REPLACE_SN_800PLUS"
+    rated_output_w: 800
+    battery_bank:
+      chemistry: "LiFePO4"
+      modules:
+        - moduleSn: "REPLACE_BAT_SN_3"
+          model: "AB1000"
+          nominal_capacity_wh: 960
+          usable_capacity_wh: 896
+
+  # ---------------------------------------------------------------------------
+  # EXAMPLE 3: Hyper 2000
+  # ---------------------------------------------------------------------------
+  - enabled: false
+    role: "hybrid"
+    location: "Keller"
+    deviceKey: "REPLACE_DEVICE_ID_H2000"
+    productModel: "hyper 2000"
+    deviceName: "Hyper 2000 Keller"
+    deviceSn: "REPLACE_SN_H2000"
+    rated_output_w: 1200
+    battery_bank:
+      chemistry: "LiFePO4"
+      modules:
+        - moduleSn: "REPLACE_BAT_SN_4"
+          model: "AB2000"
+          nominal_capacity_wh: 1920
+          usable_capacity_wh: 1792
+
+  # ---------------------------------------------------------------------------
+  # EXAMPLE 4: Hub 2000 / SolarFlow Hub 2000
+  # ---------------------------------------------------------------------------
+  - enabled: false
+    role: "hub"
+    location: "Garage"
+    deviceKey: "REPLACE_DEVICE_ID_HUB2000"
+    productModel: "solarflow hub 2000"
+    deviceName: "Hub 2000 Garage"
+    deviceSn: "REPLACE_SN_HUB2000"
+    rated_output_w: 1200
+    battery_bank:
+      chemistry: "LiFePO4"
+      modules:
+        - moduleSn: "REPLACE_BAT_SN_5"
+          model: "AB2000"
+          nominal_capacity_wh: 1920
+          usable_capacity_wh: 1792
+
+  # ---------------------------------------------------------------------------
+  # EXAMPLE 5: AIO 2400 / SolarFlow AIO ZY
+  # ---------------------------------------------------------------------------
+  - enabled: false
+    role: "aio"
+    location: "Hausanschlussraum"
+    deviceKey: "REPLACE_DEVICE_ID_AIO2400"
+    productModel: "aio 2400"
+    deviceName: "AIO 2400"
+    deviceSn: "REPLACE_SN_AIO2400"
+    rated_output_w: 2400
+    integrated_battery:
+      nominal_capacity_wh: 2400
+      usable_capacity_wh: 2200
+
+  # ---------------------------------------------------------------------------
+  # EXAMPLE 6: Weitere unterstützte Modelle (auskommentiert / als Platzhalter)
+  # ---------------------------------------------------------------------------
+  - enabled: false
+    role: "other"
+    location: "Test"
+    deviceKey: "REPLACE_DEVICE_ID_OTHER"
+    productModel: "solarflow 2400 pro"   # oder: ace 1500, hub 1200, solarflow 1600 ac+, ...
+    deviceName: "Zendure Placeholder"
+    deviceSn: "REPLACE_SN_OTHER"
+    rated_output_w: 2400
+
+# Globale Zusatzparameter (optional, für zukünftige Reglernutzung)
+control_profile:
+  prefer_balanced_soc: true
+  reserve_soc_percent: 20
+  max_total_output_w: 1200
+  grid_bias_w: 10
