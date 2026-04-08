@@ -1,0 +1,42 @@
+# Beispiel: Zendure-HA komplett lokal (ohne Cloudzugriff) + ZENSDK-Regelung
+#
+# 1) In configuration.yaml einbinden:
+#    zendure_ha: !include docs/zendure_local_zendsk.yaml
+#
+# 2) Pflichtfelder:
+#    - mqttserver / mqttuser / mqttpsw: Dein lokaler MQTT-Broker
+#    - devices: Liste deiner Zendure Geräte
+#      * deviceKey = Geräte-ID
+#      * productModel = exakter Modellname wie in der offiziellen Integration
+#
+# 3) Nach HA-Neustart die Regelung auf "smart" stellen (ZENSDK-Pfad im Manager).
+local_only: true
+mqttlocal: true
+mqttserver: 192.168.1.10
+mqttport: 1883
+mqttuser: zendure_local
+mqttpsw: "REPLACE_ME"
+p1meter: sensor.power_actual
+mqttlog: false
+devices:
+  - deviceKey: "YOUR_DEVICE_ID_1"
+    productModel: "SolarFlow Hub 2000"
+    deviceName: "SolarFlow Terrasse"
+    deviceSn: "YOUR_SN_1"
+  - deviceKey: "YOUR_DEVICE_ID_2"
+    productModel: "Hyper 2000"
+    deviceName: "Hyper Keller"
+    deviceSn: "YOUR_SN_2"
+
+# Optional: beim Start direkt den ZENSDK-Modus aktivieren.
+automation:
+  - alias: Zendure ZENSDK aktivieren
+    trigger:
+      - platform: homeassistant
+        event: start
+    action:
+      - service: select.select_option
+        target:
+          entity_id: select.zendure_manager_operation
+        data:
+          option: smart
