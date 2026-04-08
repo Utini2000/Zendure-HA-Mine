@@ -63,6 +63,29 @@ To install via HACS:
 
    [![Set up a new integration in Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=zendure_ha)
 
+### YAML setup (local-only, ohne Internet)
+
+Ab Version dieser Repo-Anpassung kann die Integration auch per YAML importiert werden.  
+Damit ist ein **lokaler Betrieb ohne Cloud-MQTT** möglich, wenn `local_only: true` gesetzt ist und die Geräte unter `devices` hinterlegt sind.
+
+Beispiel:
+
+```yaml
+zendure_ha: !include docs/zendure_local_zendsk.yaml
+```
+
+Im Beispiel (`docs/zendure_local_zendsk.yaml`) ist außerdem eine Start-Automation enthalten, die den Manager direkt auf `smart` stellt (ZENSDK-Regelung).
+
+Zusätzlich liegt mit `zendure_v120_p1_event_hybrid.yaml` ein YAML-only P1-Event-Hybrid-Regler in dieser Repo, falls du bewusst ohne den kompletten Manager-Stack arbeiten möchtest.
+
+Für eine Python-basierte P1 Fast/Normal-Regelung (ohne kompletten Manager-Stack) sind außerdem enthalten:
+- `pyscript/zendure_p1_fast_controller.py`
+- `zendure_v130_pyscript_helpers.yaml`
+- `zendure_v130.yaml` (vollständige v110-Featurebasis als neue Zielversion)
+- `zendure_v131.yaml` (Hybrid: pyscript als Master + v110 Schutz-/Guard-Layer)
+- `zendure_v132.yaml` (YAML-only Master/Guard mit StdDev-Fast-Gates)
+- `zendure_v133.yaml` (YAML-only mit Full-Latch Hard-Floor, importbasierter Floor-Freigabe und parametrierter StdDev-Mindestschwelle)
+
 
 ## Contributing
 
