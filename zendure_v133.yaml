@@ -1694,7 +1694,6 @@ automation:
                   - condition: numeric_state
                     entity_id: !secret power_meter_total_consumption
                     above: 50
-                    for: "00:01:00"
                 then:
                   - action: input_boolean.turn_off
                     target:
