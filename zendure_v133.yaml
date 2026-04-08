@@ -182,7 +182,7 @@ input_number:
     min: 5
     max: 200
     step: 1
-    initial: 30
+    initial: 15
     unit_of_measurement: "W"
 
   zendure_conf_floor_u1_w:
@@ -190,7 +190,7 @@ input_number:
     min: 0
     max: 800
     step: 10
-    initial: 100
+    initial: 150
     unit_of_measurement: "W"
 
   zendure_conf_floor_u2_w:
@@ -198,7 +198,7 @@ input_number:
     min: 0
     max: 800
     step: 10
-    initial: 100
+    initial: 150
     unit_of_measurement: "W"
 
   zendure_conf_soc_off:
@@ -1551,9 +1551,9 @@ automation:
           grid: "{{ states(meter_entity) | float(0) }}"
           p1_mean: "{{ states('sensor.zendure_p1_mean_30s') | float(grid) }}"
           p1_stddev: "{{ states('sensor.zendure_p1_stddev_30s') | float(0) }}"
-          stddev_min: "{{ states('input_number.zendure_conf_stddev_min_w') | float(30) }}"
+          stddev_min: "{{ states('input_number.zendure_conf_stddev_min_w') | float(15) }}"
           stddev_factor: 3.5
-          fast_threshold: "{{ (stddev_factor | float(3.5)) * ([stddev_min | float(30), p1_stddev | float(0)] | max) }}"
+          fast_threshold: "{{ (stddev_factor | float(3.5)) * ([stddev_min | float(15), p1_stddev | float(0)] | max) }}"
           jump: >-
             {% if trigger.id == 'meter_step' and trigger.from_state is not none and trigger.to_state is not none and is_number(trigger.from_state.state) and is_number(trigger.to_state.state) %}
               {{ ((trigger.to_state.state | float(0)) - (trigger.from_state.state | float(0))) | abs }}
@@ -1853,8 +1853,8 @@ automation:
           bypass2: "{{ is_state('input_boolean.zendure_bypass_u2','on') }}"
           floor_latch_u1: "{{ is_state('input_boolean.zendure_floor_latch_u1','on') }}"
           floor_latch_u2: "{{ is_state('input_boolean.zendure_floor_latch_u2','on') }}"
-          floor_cfg_u1: "{{ states('input_number.zendure_conf_floor_u1_w') | int(100) }}"
-          floor_cfg_u2: "{{ states('input_number.zendure_conf_floor_u2_w') | int(100) }}"
+          floor_cfg_u1: "{{ states('input_number.zendure_conf_floor_u1_w') | int(150) }}"
+          floor_cfg_u2: "{{ states('input_number.zendure_conf_floor_u2_w') | int(150) }}"
           s1_solar: "{{ states('sensor.solarflow_1_solar_input') | float(0) if pv_u1_recent | bool else 0 }}"
           s2_solar: "{{ states('sensor.solarflow_2_solar_input') | float(0) if pv_u2_recent | bool else 0 }}"
           actual_1_raw: "{{ states('sensor.solarflow_1_output_power') | float(0) if s1_ok | bool else 0 }}"
@@ -1941,11 +1941,11 @@ automation:
 
           floor_1: >-
             {% if floor_latch_u1 and soc1_valid and not busy_u1 %}
-              {{ floor_cfg_u1 | int(100) }}
+              {{ floor_cfg_u1 | int(150) }}
             {% else %} 0 {% endif %}
           floor_2: >-
             {% if floor_latch_u2 and soc2_valid and not busy_u2 %}
-              {{ floor_cfg_u2 | int(100) }}
+              {{ floor_cfg_u2 | int(150) }}
             {% else %} 0 {% endif %}
 
 
