@@ -84,7 +84,7 @@ Für eine Python-basierte P1 Fast/Normal-Regelung (ohne kompletten Manager-Stack
 - `zendure_v130.yaml` (vollständige v110-Featurebasis als neue Zielversion)
 - `zendure_v131.yaml` (Hybrid: pyscript als Master + v110 Schutz-/Guard-Layer)
 - `zendure_v132.yaml` (YAML-only Master/Guard mit StdDev-Fast-Gates)
-- `zendure_v133.yaml` (YAML-only mit Full-Latch Hard-Floor, importbasierter Floor-Freigabe und parametrierter Fast-Jump-Schwelle)
+- `zendure_v133.yaml` (YAML-only mit Full-Latch Hard-Floor, importbasierter Floor-Freigabe und parametrierter StdDev-Mindestschwelle)
 
 
 ## Contributing

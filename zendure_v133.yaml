@@ -92,12 +92,12 @@ input_datetime:
     name: "Intern: SoC-Drift Referenzzeit U2"
     has_date: true
     has_time: true
-  zendure_v133_zero_next:
-    name: "Intern v133: Zero Next"
+  zendure_zero_next:
+    name: "Intern: Zero Next"
     has_date: true
     has_time: true
-  zendure_v133_zero_fast_until:
-    name: "Intern v133: Zero Fast Until"
+  zendure_zero_fast_until:
+    name: "Intern: Zero Fast Until"
     has_date: true
     has_time: true
 input_number:
@@ -177,8 +177,8 @@ input_number:
     initial: 10
     unit_of_measurement: "W"
 
-  zendure_conf_fast_jump_w:
-    name: "Zendure: Fast Jump Schwelle"
+  zendure_conf_stddev_min_w:
+    name: "Zendure: StdDev Mindestschwelle"
     min: 5
     max: 200
     step: 1
@@ -828,6 +828,7 @@ sensor:
   - platform: statistics
     entity_id: !secret power_meter_total_consumption
     name: "Zendure P1 Mean 30s"
+    unique_id: zendure_p1_mean_30s
     state_characteristic: mean
     sampling_size: 8
     max_age:
@@ -836,6 +837,7 @@ sensor:
   - platform: statistics
     entity_id: !secret power_meter_total_consumption
     name: "Zendure P1 Stddev 30s"
+    unique_id: zendure_p1_stddev_30s
     state_characteristic: standard_deviation
     sampling_size: 8
     max_age:
@@ -1512,12 +1514,12 @@ automation:
           now_ts: "{{ as_timestamp(now()) | float(0) }}"
       - action: input_datetime.set_datetime
         target:
-          entity_id: input_datetime.zendure_v133_zero_next
+          entity_id: input_datetime.zendure_zero_next
         data:
           timestamp: "{{ now_ts }}"
       - action: input_datetime.set_datetime
         target:
-          entity_id: input_datetime.zendure_v133_zero_fast_until
+          entity_id: input_datetime.zendure_zero_fast_until
         data:
           timestamp: "{{ now_ts }}"
 
@@ -1543,22 +1545,22 @@ automation:
 
       - variables:
           now_ts: "{{ as_timestamp(now()) | float(0) }}"
-          zero_next_ts: "{{ as_timestamp(states('input_datetime.zendure_v133_zero_next'), default=0) | float(0) }}"
-          zero_fast_until_ts: "{{ as_timestamp(states('input_datetime.zendure_v133_zero_fast_until'), default=0) | float(0) }}"
+          zero_next_ts: "{{ as_timestamp(states('input_datetime.zendure_zero_next'), default=0) | float(0) }}"
+          zero_fast_until_ts: "{{ as_timestamp(states('input_datetime.zendure_zero_fast_until'), default=0) | float(0) }}"
           meter_entity: !secret power_meter_total_consumption
           grid: "{{ states(meter_entity) | float(0) }}"
           p1_mean: "{{ states('sensor.zendure_p1_mean_30s') | float(grid) }}"
           p1_stddev: "{{ states('sensor.zendure_p1_stddev_30s') | float(0) }}"
-          stddev_min: 15
+          stddev_min: "{{ states('input_number.zendure_conf_stddev_min_w') | float(30) }}"
           stddev_factor: 3.5
-          fast_threshold: "{{ (stddev_factor | float(3.5)) * ([stddev_min | float(15), p1_stddev | float(0)] | max) }}"
+          fast_threshold: "{{ (stddev_factor | float(3.5)) * ([stddev_min | float(30), p1_stddev | float(0)] | max) }}"
           jump: >-
             {% if trigger.id == 'meter_step' and trigger.from_state is not none and trigger.to_state is not none and is_number(trigger.from_state.state) and is_number(trigger.to_state.state) %}
               {{ ((trigger.to_state.state | float(0)) - (trigger.from_state.state | float(0))) | abs }}
             {% else %}
               0
             {% endif %}
-          is_fast: "{{ ((grid - p1_mean) | abs) > (fast_threshold | float(0)) or (jump | float(0)) >= (states('input_number.zendure_conf_fast_jump_w') | float(30)) }}"
+          is_fast: "{{ ((grid - p1_mean) | abs) > (fast_threshold | float(0)) or (jump | float(0)) >= 30 }}"
 
       - if:
           - condition: template
@@ -1592,12 +1594,12 @@ automation:
         then:
           - action: input_datetime.set_datetime
             target:
-              entity_id: input_datetime.zendure_v133_zero_next
+              entity_id: input_datetime.zendure_zero_next
             data:
               timestamp: "{{ now_ts + 4.0 }}"
           - action: input_datetime.set_datetime
             target:
-              entity_id: input_datetime.zendure_v133_zero_fast_until
+              entity_id: input_datetime.zendure_zero_fast_until
             data:
               timestamp: "{{ now_ts + 2.2 }}"
           - stop: "Inside deadband"
@@ -1610,12 +1612,12 @@ automation:
 
       - action: input_datetime.set_datetime
         target:
-          entity_id: input_datetime.zendure_v133_zero_next
+          entity_id: input_datetime.zendure_zero_next
         data:
           timestamp: "{{ now_ts + 4.0 }}"
       - action: input_datetime.set_datetime
         target:
-          entity_id: input_datetime.zendure_v133_zero_fast_until
+          entity_id: input_datetime.zendure_zero_fast_until
         data:
           timestamp: "{{ now_ts + 2.2 }}"
 
@@ -1961,9 +1963,8 @@ automation:
             {% else %}
               0
             {% endif %}
-          fast_jump_floor: "{{ states('input_number.zendure_conf_fast_jump_w') | int(30) }}"
-          fast_jump_threshold: "{{ [[(hysteresis|int(10) * 2), fast_jump_floor|int(30)] | max, 120] | min }}"
-          fast_event: "{{ trigger.id == 'meter_step' and (jump_raw | float(0)) >= (fast_jump_threshold | int(fast_jump_floor|int(30))) }}"
+          fast_jump_threshold: "{{ [[(hysteresis|int(10) * 2), 30] | max, 120] | min }}"
+          fast_event: "{{ trigger.id == 'meter_step' and (jump_raw | float(0)) >= (fast_jump_threshold | int(30)) }}"
           fast_push_1: "{{ fast_event and time_since_1 > 1.2 }}"
           fast_push_2: "{{ fast_event and time_since_2 > 1.2 }}"
           min_change_base: "{{ (slider_change * 4) if zen_mode else slider_change }}"
