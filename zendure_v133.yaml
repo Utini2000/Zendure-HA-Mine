@@ -1502,8 +1502,8 @@ automation:
             target: { entity_id: input_boolean.zendure_bypass_u2 }
 
   # --- 6.4 CONTROL LOOP ---
-  - alias: "Zendure v133: Init Fast Gates"
-    id: "zendure_v133_init_fast_gates"
+  - alias: "Zendure: Init Fast Gates"
+    id: "zendure_init_fast_gates"
     mode: single
     initial_state: true
     triggers:
@@ -1523,8 +1523,8 @@ automation:
         data:
           timestamp: "{{ now_ts }}"
 
-  - alias: "Zendure v133: YAML Master (Stddev FastGate)"
-    id: "zendure_v133_yaml_master"
+  - alias: "Zendure: YAML Master (Stddev FastGate)"
+    id: "zendure_yaml_master"
     mode: restart
     initial_state: true
     max_exceeded: silent
@@ -1621,8 +1621,8 @@ automation:
         data:
           timestamp: "{{ now_ts + 2.2 }}"
 
-  - alias: "Zendure v133: Floor Latch Manager"
-    id: "zendure_v133_floor_latch_manager"
+  - alias: "Zendure: Floor Latch Manager"
+    id: "zendure_floor_latch_manager"
     mode: restart
     initial_state: true
     max_exceeded: silent
@@ -1718,8 +1718,8 @@ automation:
               - action: input_boolean.turn_off
                 target: { entity_id: input_boolean.zendure_floor_latch_u2 }
 
-  - alias: "Zendure v133: Guard Layer (v110 Advanced)"
-    id: "zendure_v133_guard_layer"
+  - alias: "Zendure: Guard Layer (Advanced)"
+    id: "zendure_guard_layer"
     mode: restart
     initial_state: true
     max_exceeded: silent
