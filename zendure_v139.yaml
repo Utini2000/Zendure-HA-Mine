@@ -1487,7 +1487,7 @@ automation:
     actions:
       - variables:
           soc_entry: "{{ states('input_number.zendure_conf_soc_bypass') | int(30) }}"
-          soc_exit: "{{ (soc_entry | int(30)) + 1 }}"
+          soc_exit: "{{ (soc_entry | int(30)) + 3 }}"
           soc1_ok: "{{ is_number(states('sensor.solarflow_1_battery_level')) }}"
           soc2_ok: "{{ is_number(states('sensor.solarflow_2_battery_level')) }}"
           soc1: "{{ states('sensor.solarflow_1_battery_level') | float(0) }}"
@@ -1615,7 +1615,7 @@ automation:
               entity_id: input_datetime.zendure_zero_next
             data:
               timestamp: >-
-                {% if (target_total | float(0)) < (actual_total | float(0)) %}
+                {% if (target_total | float(0)) < (out_total | float(0)) %}
                   {{ now_ts + 2.0 }}
                 {% else %}
                   {{ now_ts + 2.5 }}
@@ -1638,7 +1638,7 @@ automation:
           entity_id: input_datetime.zendure_zero_next
         data:
           timestamp: >-
-            {% if (target_total | float(0)) < (actual_total | float(0)) %}
+            {% if (target_total | float(0)) < (out_total | float(0)) %}
               {{ now_ts + 2.0 }}
             {% else %}
               {{ now_ts + 2.5 }}
@@ -2012,9 +2012,6 @@ automation:
           fast_push_2: "{{ fast_event and time_since_2 > 1.2 }}"
           min_change_base: "{{ (slider_change * 4) if zen_mode else slider_change }}"
           min_change: "{{ [5, ((min_change_base | int(0)) // 2)] | max if fast_event else min_change_base }}"
-          cmd_retry_s: 2.2
-          cmd_u1_cooldown_ok: "{{ (time_since_1 | float(0)) > cmd_retry_s }}"
-          cmd_u2_cooldown_ok: "{{ (time_since_2 | float(0)) > cmd_retry_s }}"
 
           override_margin: "{{ [min_change|int(0), 10] | max }}"
           spillover_override: "{{ (floor_1|int(0) > (s1_base|int(0) + override_margin|int(0))) or (floor_2|int(0) > (s2_base|int(0) + override_margin|int(0))) }}"
@@ -2066,7 +2063,7 @@ automation:
             {% if tracking_unreliable | bool %}
               {{ cmd_total | int(0) }}
             {% else %}
-              {{ ((cmd_total|int(0) * 0.75) + (actual_total|int(0) * 0.25)) | int(0) }}
+              {{ ((cmd_total|int(0) * 0.50) + (actual_total|int(0) * 0.50)) | int(0) }}
             {% endif %}
 
           target_raw: >-
@@ -2103,6 +2100,17 @@ automation:
              or rebalance_needed }}
 
       - variables:
+          cmd_retry_s: >-
+            {% if fast_event %}
+              1.5
+            {% elif (target_total|int(0)) < (actual_total|int(0)) %}
+              2.0
+            {% else %}
+              2.5
+            {% endif %}
+          cmd_u1_cooldown_ok: "{{ (time_since_1 | float(0)) > cmd_retry_s }}"
+          cmd_u2_cooldown_ok: "{{ (time_since_2 | float(0)) > cmd_retry_s }}"
+
           target_online: "{{ [[(target_total|int(0) - ghost_total|int(0) - busy_actual_total|int(0)), 0]|max, available_capacity|int(0)]|min }}"
 
           active_1: "{{ s1_ok | bool and not (busy_u1 | bool) }}"
@@ -2691,7 +2699,7 @@ automation:
                         📉 *Spannungseinbruch U1 (Nacht)*
                         Unterspannung auf frischem Spannungs-Update bestätigt
                         ({{ v_confirm | round(3) }} V, Δ {{ imb_confirm | round(3) }} V).
-                        Notstrom Automatik übernimmt nun. Kalibrierung für morgen 13:00 Uhr vorgemerkt.
+                        Notstrom Automatik übernimmt nun. Kalibrierung für morgen 12:00 Uhr vorgemerkt.
 
   # --- 6.6b SAG CONFIRM U2 ---
   - alias: "Zendure: Sag Confirm U2"
@@ -2843,7 +2851,7 @@ automation:
                         📉 *Spannungseinbruch U2 (Nacht)*
                         Unterspannung auf frischem Spannungs-Update bestätigt
                         ({{ v_confirm | round(3) }} V, Δ {{ imb_confirm | round(3) }} V).
-                        Notstrom Automatik übernimmt nun. Kalibrierung für morgen 13:00 Uhr vorgemerkt.
+                        Notstrom Automatik übernimmt nun. Kalibrierung für morgen 12:00 Uhr vorgemerkt.
 
   # --- 6.6c VOLTAGE GUARD LATCH MANAGER ---
   - alias: "Zendure: Voltage Guard Latch Manager"
@@ -3102,7 +3110,7 @@ automation:
                   entity_id: !secret telegram_id1
                 data:
                   message: >
-                    🧭 *Calibration U1 scheduled for tomorrow 13:00*
+                    🧭 *Calibration U1 scheduled for tomorrow 12:00*
                     Suspicious SoC drop detected without matching energy output
                     (ΔSoC {{ drop1 }}% in {{ age_min1 | round(0) }} min, vmin {{ states('sensor.solarflow_1_cell_min_vol') | float(0) | round(3) }} V).
 
@@ -3118,7 +3126,7 @@ automation:
                   entity_id: !secret telegram_id1
                 data:
                   message: >
-                    🧭 *Calibration U2 scheduled for tomorrow 13:00*
+                    🧭 *Calibration U2 scheduled for tomorrow 12:00*
                     Suspicious SoC drop detected without matching energy output
                     (ΔSoC {{ drop2 }}% in {{ age_min2 | round(0) }} min, vmin {{ states('sensor.solarflow_2_cell_min_vol') | float(0) | round(3) }} V).
 
@@ -3150,7 +3158,7 @@ automation:
         event: start
         id: "boot_check"
       - trigger: time
-        at: "13:00:00"
+        at: "12:00:00"
         id: "check_time"
       - trigger: numeric_state
         entity_id: sensor.solarflow_1_battery_level
@@ -4210,16 +4218,16 @@ automation:
             sequence:
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_conf_soc_off }
-                data: { value: 10 }
+                data: { value: 14 }
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_conf_soc_bypass }
-                data: { value: 12 }
+                data: { value: 16 }
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_conf_soc_emerg_start }
-                data: { value: 7 }
+                data: { value: 10 }
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_conf_soc_emerg_stop }
-                data: { value: 9 }
+                data: { value: 13 }
               - action: input_number.set_value
                 target: { entity_id: input_number.zendure_conf_calib_days }
                 data: { value: 14 }
