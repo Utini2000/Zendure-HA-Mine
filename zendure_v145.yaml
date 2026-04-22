@@ -556,7 +556,48 @@ mqtt:
 # 3. HELPER SENSOREN (MIT PLAUSIBILITÄTS- UND FRESHNESS-FILTER)
 # ==============================================================================
 template:
+  - binary_sensor:
+      - name: "SolarFlow 1 Temperature Mode OK"
+        unique_id: solarflow_1_temp_mode_ok
+        default_entity_id: binary_sensor.solarflow_1_temp_mode_ok
+        icon: mdi:thermometer-check
+        state: >
+          {% set have_temp = has_value('sensor.solarflow_1_operating_temp') %}
+          {% set t = states('sensor.solarflow_1_operating_temp') | float(999) %}
+          {{ have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') }}
+
+      - name: "SolarFlow 2 Temperature Mode OK"
+        unique_id: solarflow_2_temp_mode_ok
+        default_entity_id: binary_sensor.solarflow_2_temp_mode_ok
+        icon: mdi:thermometer-check
+        state: >
+          {% set have_temp = has_value('sensor.solarflow_2_operating_temp') %}
+          {% set t = states('sensor.solarflow_2_operating_temp') | float(999) %}
+          {{ have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') }}
+
   - sensor:
+      - name: "SolarFlow 1 Operating Temp"
+        unique_id: solarflow_1_operating_temp
+        default_entity_id: sensor.solarflow_1_operating_temp
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        availability: >
+          {{ has_value('sensor.solarflow_1_batt_max_temp') or has_value('sensor.solarflow_1_temp') }}
+        state: >
+          {{ states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp') | float(999)) }}
+
+      - name: "SolarFlow 2 Operating Temp"
+        unique_id: solarflow_2_operating_temp
+        default_entity_id: sensor.solarflow_2_operating_temp
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        availability: >
+          {{ has_value('sensor.solarflow_2_batt_max_temp') or has_value('sensor.solarflow_2_temp') }}
+        state: >
+          {{ states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp') | float(999)) }}
+
       - name: "SolarFlow 1 Battery Level"
         unique_id: solarflow_1_battery_level
         default_entity_id: sensor.solarflow_1_battery_level
@@ -569,11 +610,7 @@ template:
           {% set soc_ok = has_value('sensor.solarflow_1_battery_level_hub') %}
           {% set vmin_ok = has_value('sensor.solarflow_1_cell_min_vol') %}
           {% set vol = states('sensor.solarflow_1_cell_min_vol') | float(0) if vmin_ok else 0 %}
-          {% set bt = states.sensor.solarflow_1_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_1_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp') | float(999)) %}
-          {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u1 = is_state('binary_sensor.solarflow_1_temp_mode_ok', 'on') %}
           {{ hb_ok and soc_ok and vmin_ok and vol > 2.0 and temp_mode_ok_u1 }}
         state: >
           {{ states('sensor.solarflow_1_battery_level_hub') | int(0) }}
@@ -590,11 +627,7 @@ template:
           {% set soc_ok = has_value('sensor.solarflow_2_battery_level_hub') %}
           {% set vmin_ok = has_value('sensor.solarflow_2_cell_min_vol') %}
           {% set vol = states('sensor.solarflow_2_cell_min_vol') | float(0) if vmin_ok else 0 %}
-          {% set bt = states.sensor.solarflow_2_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_2_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp') | float(999)) %}
-          {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u2 = is_state('binary_sensor.solarflow_2_temp_mode_ok', 'on') %}
           {{ hb_ok and soc_ok and vmin_ok and vol > 2.0 and temp_mode_ok_u2 }}
         state: >
           {{ states('sensor.solarflow_2_battery_level_hub') | int(0) }}
@@ -700,7 +733,7 @@ template:
           {% set soc = states('sensor.solarflow_1_battery_level') | float(-1) %}
           {% set soc_off = states('input_number.zendure_conf_soc_off') | float(20) %}
           {% set vmin = states('sensor.solarflow_1_cell_min_vol') | float(0) %}
-          {% set t1 = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(99)) %}
+          {% set t1 = states('sensor.solarflow_1_operating_temp') | float(99) %}
           {% if status in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] %} status_offline
           {% elif not hb_fresh %} heartbeat_stale
           {% elif is_state('input_boolean.zendure_vguard_u1','on') %} vguard_latch
@@ -727,7 +760,7 @@ template:
           {% set soc = states('sensor.solarflow_2_battery_level') | float(-1) %}
           {% set soc_off = states('input_number.zendure_conf_soc_off') | float(20) %}
           {% set vmin = states('sensor.solarflow_2_cell_min_vol') | float(0) %}
-          {% set t2 = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(99)) %}
+          {% set t2 = states('sensor.solarflow_2_operating_temp') | float(99) %}
           {% if status in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] %} status_offline
           {% elif not hb_fresh %} heartbeat_stale
           {% elif is_state('input_boolean.zendure_vguard_u2','on') %} vguard_latch
@@ -1027,7 +1060,7 @@ script:
       - action: input_boolean.turn_on
         target: { entity_id: input_boolean.zendure_emergency_u1 }
       - variables:
-          t1: "{{ states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(0)) }}"
+          t1: "{{ states('sensor.solarflow_1_operating_temp') | float(0) }}"
           soc1: "{{ states('sensor.solarflow_1_battery_level') | float(0) }}"
           cl1: "{{ 100 if t1 < 5 else (300 if t1 < 10 else 800) }}"
           ss1: "{{ 300 if soc1 < 12 else 800 }}"
@@ -1064,7 +1097,7 @@ script:
       - action: input_boolean.turn_on
         target: { entity_id: input_boolean.zendure_emergency_u2 }
       - variables:
-          t2: "{{ states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(0)) }}"
+          t2: "{{ states('sensor.solarflow_2_operating_temp') | float(0) }}"
           soc2: "{{ states('sensor.solarflow_2_battery_level') | float(0) }}"
           cl2: "{{ 100 if t2 < 5 else (300 if t2 < 10 else 800) }}"
           ss2: "{{ 300 if soc2 < 12 else 800 }}"
@@ -1661,8 +1694,8 @@ automation:
           v2_min_ok: "{{ has_value('sensor.solarflow_2_cell_min_vol') }}"
           v1_min: "{{ states('sensor.solarflow_1_cell_min_vol') | float(0) if v1_min_ok | bool else 0 }}"
           v2_min: "{{ states('sensor.solarflow_2_cell_min_vol') | float(0) if v2_min_ok | bool else 0 }}"
-          t1_raw: "{{ states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(99)) }}"
-          t2_raw: "{{ states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(99)) }}"
+          t1_raw: "{{ states('sensor.solarflow_1_operating_temp') | float(99) }}"
+          t2_raw: "{{ states('sensor.solarflow_2_operating_temp') | float(99) }}"
           soc1_raw: "{{ states('sensor.solarflow_1_battery_level') | float(-1) }}"
           soc2_raw: "{{ states('sensor.solarflow_2_battery_level') | float(-1) }}"
 
@@ -2332,8 +2365,8 @@ automation:
           online1: "{{ states('sensor.solarflow_1_status_raw')|upper not in ['UNAVAILABLE', 'UNKNOWN', 'FAULT', 'ERROR'] }}"
           online2: "{{ states('sensor.solarflow_2_status_raw')|upper not in ['UNAVAILABLE', 'UNKNOWN', 'FAULT', 'ERROR'] }}"
           min_soc: 5
-          t1: "{{ states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(0)) }}"
-          t2: "{{ states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(0)) }}"
+          t1: "{{ states('sensor.solarflow_1_operating_temp') | float(0) }}"
+          t2: "{{ states('sensor.solarflow_2_operating_temp') | float(0) }}"
           soc1: "{{ states('sensor.solarflow_1_battery_level') | float(0) }}"
           soc2: "{{ states('sensor.solarflow_2_battery_level') | float(0) }}"
           soc1_valid: "{{ is_number(states('sensor.solarflow_1_battery_level')) }}"
@@ -2436,14 +2469,14 @@ automation:
                 {{ states('input_number.zendure_last_sent_1')|int(999) == 0
                    or states('sensor.solarflow_1_output_limit')|int(999) == 0 }}
               limit_calib_u1: >
-                {% set t1 = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(0)) %}
+                {% set t1 = states('sensor.solarflow_1_operating_temp') | float(0) %}
                 {% set soc1 = states('sensor.solarflow_1_battery_level') | float(0) %}
                 {% set cl1 = 100 if t1 < 5 else (300 if t1 < 10 else 800) %}
                 {% set sl1 = 100 if soc1 > 97 else (200 if soc1 >= 90 else 800) %}
                 {% set soc_soft_u1 = 100 if soc1 < 8 else (300 if soc1 < 12 else 800) %}
                 {{ [cl1|int, sl1|int, soc_soft_u1|int]|min }}
               limit_emerg_u1: >
-                {% set t1 = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(0)) %}
+                {% set t1 = states('sensor.solarflow_1_operating_temp') | float(0) %}
                 {% set soc1 = states('sensor.solarflow_1_battery_level') | float(0) %}
                 {% set cl1 = 100 if t1 < 5 else (300 if t1 < 10 else 800) %}
                 {% set ss1 = 300 if soc1 < 12 else 800 %}
@@ -2588,14 +2621,14 @@ automation:
                 {{ states('input_number.zendure_last_sent_2')|int(999) == 0
                    or states('sensor.solarflow_2_output_limit')|int(999) == 0 }}
               limit_calib_u2: >
-                {% set t2 = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(0)) %}
+                {% set t2 = states('sensor.solarflow_2_operating_temp') | float(0) %}
                 {% set soc2 = states('sensor.solarflow_2_battery_level') | float(0) %}
                 {% set cl2 = 100 if t2 < 5 else (300 if t2 < 10 else 800) %}
                 {% set sl2 = 100 if soc2 > 97 else (200 if soc2 >= 90 else 800) %}
                 {% set soc_soft_u2 = 100 if soc2 < 8 else (300 if soc2 < 12 else 800) %}
                 {{ [cl2|int, sl2|int, soc_soft_u2|int]|min }}
               limit_emerg_u2: >
-                {% set t2 = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(0)) %}
+                {% set t2 = states('sensor.solarflow_2_operating_temp') | float(0) %}
                 {% set soc2 = states('sensor.solarflow_2_battery_level') | float(0) %}
                 {% set cl2 = 100 if t2 < 5 else (300 if t2 < 10 else 800) %}
                 {% set ss2 = 300 if soc2 < 12 else 800 %}
@@ -3018,11 +3051,7 @@ automation:
       - trigger: template
         id: "stop_u1_abort"
         value_template: >
-          {% set bt = states.sensor.solarflow_1_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_1_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_1_batt_max_temp')|float(states('sensor.solarflow_1_temp')|float(999)) %}
-          {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u1 = is_state('binary_sensor.solarflow_1_temp_mode_ok', 'on') %}
           {{ is_state('input_boolean.zendure_calib_mode_u1', 'on')
              and (not temp_mode_ok_u1
                   or states('sensor.solarflow_1_status_raw')|upper in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR']) }}
@@ -3030,11 +3059,7 @@ automation:
       - trigger: template
         id: "stop_u2_abort"
         value_template: >
-          {% set bt = states.sensor.solarflow_2_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_2_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_2_batt_max_temp')|float(states('sensor.solarflow_2_temp')|float(999)) %}
-          {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u2 = is_state('binary_sensor.solarflow_2_temp_mode_ok', 'on') %}
           {{ is_state('input_boolean.zendure_calib_mode_u2', 'on')
              and (not temp_mode_ok_u2
                   or states('sensor.solarflow_2_status_raw')|upper in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR']) }}
@@ -3088,11 +3113,7 @@ automation:
               {% set fresh = s is not none and s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] and (as_timestamp(now()) - as_timestamp(s.last_reported, 0)) < 120 %}
               {% set vmin_ok = has_value('sensor.solarflow_1_cell_min_vol') %}
               {% set vol = states('sensor.solarflow_1_cell_min_vol')|float(0) if vmin_ok else 0 %}
-              {% set bt = states.sensor.solarflow_1_batt_max_temp %}
-              {% set ht = states.sensor.solarflow_1_temp %}
-              {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-              {% set t = states('sensor.solarflow_1_batt_max_temp')|float(states('sensor.solarflow_1_temp')|float(999)) %}
-              {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+              {% set temp_mode_ok_u1 = is_state('binary_sensor.solarflow_1_temp_mode_ok', 'on') %}
               {% set plausible = vmin_ok and vol > 2.0 and temp_mode_ok_u1 %}
 
               {{ trigger.id == 'check_time' and (days_u1 >= days_cfg or force_u1)
@@ -3108,7 +3129,7 @@ automation:
               pv_high_raw: "{{ states('input_number.zendure_conf_calib_pv_high') | float(70) }}"
               pv_start: "{{ [pv_high_raw, (pv_low | float(40)) + 10] | max }}"
               limit_calib_u1: >
-                {% set t1 = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(0)) %}
+                {% set t1 = states('sensor.solarflow_1_operating_temp') | float(0) %}
                 {% set soc1 = states('sensor.solarflow_1_battery_level') | float(0) %}
                 {% set cl1 = 100 if t1 < 5 else (300 if t1 < 10 else 800) %}
                 {% set sl1 = 100 if soc1 > 97 else (200 if soc1 >= 90 else 800) %}
@@ -3162,11 +3183,7 @@ automation:
               {% set fresh = s is not none and s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] and (as_timestamp(now()) - as_timestamp(s.last_reported, 0)) < 120 %}
               {% set vmin_ok = has_value('sensor.solarflow_2_cell_min_vol') %}
               {% set vol = states('sensor.solarflow_2_cell_min_vol')|float(0) if vmin_ok else 0 %}
-              {% set bt = states.sensor.solarflow_2_batt_max_temp %}
-              {% set ht = states.sensor.solarflow_2_temp %}
-              {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-              {% set t = states('sensor.solarflow_2_batt_max_temp')|float(states('sensor.solarflow_2_temp')|float(999)) %}
-              {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+              {% set temp_mode_ok_u2 = is_state('binary_sensor.solarflow_2_temp_mode_ok', 'on') %}
               {% set plausible = vmin_ok and vol > 2.0 and temp_mode_ok_u2 %}
 
               {{ trigger.id == 'check_time' and (days_u2 >= days_cfg or force_u2)
@@ -3182,7 +3199,7 @@ automation:
               pv_high_raw: "{{ states('input_number.zendure_conf_calib_pv_high') | float(70) }}"
               pv_start: "{{ [pv_high_raw, (pv_low | float(40)) + 10] | max }}"
               limit_calib_u2: >
-                {% set t2 = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(0)) %}
+                {% set t2 = states('sensor.solarflow_2_operating_temp') | float(0) %}
                 {% set soc2 = states('sensor.solarflow_2_battery_level') | float(0) %}
                 {% set cl2 = 100 if t2 < 5 else (300 if t2 < 10 else 800) %}
                 {% set sl2 = 100 if soc2 > 97 else (200 if soc2 >= 90 else 800) %}
@@ -3379,8 +3396,8 @@ automation:
           s1_solar: "{{ states('sensor.solarflow_1_solar_input') | float(0) if online1 else 0 }}"
           s2_solar: "{{ states('sensor.solarflow_2_solar_input') | float(0) if online2 else 0 }}"
 
-          t1: "{{ states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(0)) }}"
-          t2: "{{ states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(0)) }}"
+          t1: "{{ states('sensor.solarflow_1_operating_temp') | float(0) }}"
+          t2: "{{ states('sensor.solarflow_2_operating_temp') | float(0) }}"
           cl1: "{{ 100 if t1 < 5 else (300 if t1 < 10 else 800) }}"
           cl2: "{{ 100 if t2 < 5 else (300 if t2 < 10 else 800) }}"
           sl1: "{{ 100 if soc1 > 97 else (200 if soc1 >= 90 else 800) }}"
@@ -3502,11 +3519,7 @@ automation:
                 value_template: >
                   {% set s = states.sensor.solarflow_1_status_raw %}
                   {% set fresh = s is not none and s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] and (as_timestamp(now()) - as_timestamp(s.last_reported, 0)) < 120 %}
-                  {% set bt = states.sensor.solarflow_1_batt_max_temp %}
-                  {% set ht = states.sensor.solarflow_1_temp %}
-                  {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-                  {% set t = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp') | float(999)) %}
-                  {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+                  {% set temp_mode_ok_u1 = is_state('binary_sensor.solarflow_1_temp_mode_ok', 'on') %}
                   {{ is_state('input_boolean.zendure_vguard_u1','on')
                      and is_state('input_boolean.zendure_emergency_u1','off')
                      and is_state('input_boolean.zendure_calib_mode_u1','off')
@@ -3523,7 +3536,7 @@ automation:
               - action: input_boolean.turn_on
                 target: { entity_id: input_boolean.zendure_emergency_u1 }
               - variables:
-                  t1: "{{ states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(0)) }}"
+                  t1: "{{ states('sensor.solarflow_1_operating_temp') | float(0) }}"
                   soc1: "{{ states('sensor.solarflow_1_battery_level') | float(0) }}"
                   cl1: "{{ 100 if t1 < 5 else (300 if t1 < 10 else 800) }}"
                   ss1: "{{ 300 if soc1 < 12 else 800 }}"
@@ -3552,11 +3565,7 @@ automation:
                 value_template: >
                   {% set s = states.sensor.solarflow_2_status_raw %}
                   {% set fresh = s is not none and s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] and (as_timestamp(now()) - as_timestamp(s.last_reported, 0)) < 120 %}
-                  {% set bt = states.sensor.solarflow_2_batt_max_temp %}
-                  {% set ht = states.sensor.solarflow_2_temp %}
-                  {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-                  {% set t = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp') | float(999)) %}
-                  {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+                  {% set temp_mode_ok_u2 = is_state('binary_sensor.solarflow_2_temp_mode_ok', 'on') %}
                   {{ is_state('input_boolean.zendure_vguard_u2','on')
                      and is_state('input_boolean.zendure_emergency_u2','off')
                      and is_state('input_boolean.zendure_calib_mode_u2','off')
@@ -3573,7 +3582,7 @@ automation:
               - action: input_boolean.turn_on
                 target: { entity_id: input_boolean.zendure_emergency_u2 }
               - variables:
-                  t2: "{{ states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(0)) }}"
+                  t2: "{{ states('sensor.solarflow_2_operating_temp') | float(0) }}"
                   soc2: "{{ states('sensor.solarflow_2_battery_level') | float(0) }}"
                   cl2: "{{ 100 if t2 < 5 else (300 if t2 < 10 else 800) }}"
                   ss2: "{{ 300 if soc2 < 12 else 800 }}"
@@ -3616,11 +3625,7 @@ automation:
           {% set vmin_ok = has_value('sensor.solarflow_1_cell_min_vol') %}
           {% set vol = states('sensor.solarflow_1_cell_min_vol')|float(0) if vmin_ok else 0 %}
           {% set soc = states('sensor.solarflow_1_battery_level')|float(100) %}
-          {% set bt = states.sensor.solarflow_1_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_1_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp') | float(999)) %}
-          {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u1 = is_state('binary_sensor.solarflow_1_temp_mode_ok', 'on') %}
           {% set plausible = vmin_ok and vol > 2.0 and temp_mode_ok_u1 %}
           {{ fresh and plausible
              and is_state('input_boolean.zendure_emergency_u1', 'off')
@@ -3640,11 +3645,7 @@ automation:
           {% set soc = states('sensor.solarflow_1_battery_level')|float(100) %}
           {% set out = states('sensor.solarflow_1_output_power')|float(0) %}
           {% set lim = states('sensor.solarflow_1_output_limit')|float(0) %}
-          {% set bt = states.sensor.solarflow_1_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_1_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp') | float(999)) %}
-          {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u1 = is_state('binary_sensor.solarflow_1_temp_mode_ok', 'on') %}
           {{ fresh
              and vmin_ok
              and is_state('input_boolean.zendure_emergency_u1', 'off')
@@ -3665,11 +3666,7 @@ automation:
           {% set vol = states('sensor.solarflow_1_cell_min_vol')|float(0) if vmin_ok else 0 %}
           {% set out = states('sensor.solarflow_1_output_power')|float(0) %}
           {% set lim = states('sensor.solarflow_1_output_limit')|float(0) %}
-          {% set bt = states.sensor.solarflow_1_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_1_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp') | float(999)) %}
-          {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u1 = is_state('binary_sensor.solarflow_1_temp_mode_ok', 'on') %}
           {{ fresh
              and vmin_ok
              and is_state('input_boolean.zendure_emergency_u1', 'off')
@@ -3685,11 +3682,7 @@ automation:
       - trigger: template
         id: "stop_u1"
         value_template: >
-          {% set bt = states.sensor.solarflow_1_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_1_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp') | float(999)) %}
-          {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u1 = is_state('binary_sensor.solarflow_1_temp_mode_ok', 'on') %}
           {{ is_state('input_boolean.zendure_emergency_u1', 'on')
              and (
                (states('sensor.solarflow_1_battery_level')|float(0) >= states('input_number.zendure_conf_soc_emerg_stop')|float(25)
@@ -3709,11 +3702,7 @@ automation:
           {% set vmin_ok = has_value('sensor.solarflow_2_cell_min_vol') %}
           {% set vol = states('sensor.solarflow_2_cell_min_vol')|float(0) if vmin_ok else 0 %}
           {% set soc = states('sensor.solarflow_2_battery_level')|float(100) %}
-          {% set bt = states.sensor.solarflow_2_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_2_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp') | float(999)) %}
-          {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u2 = is_state('binary_sensor.solarflow_2_temp_mode_ok', 'on') %}
           {% set plausible = vmin_ok and vol > 2.0 and temp_mode_ok_u2 %}
           {{ fresh and plausible
              and is_state('input_boolean.zendure_emergency_u2', 'off')
@@ -3733,11 +3722,7 @@ automation:
           {% set soc = states('sensor.solarflow_2_battery_level')|float(100) %}
           {% set out = states('sensor.solarflow_2_output_power')|float(0) %}
           {% set lim = states('sensor.solarflow_2_output_limit')|float(0) %}
-          {% set bt = states.sensor.solarflow_2_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_2_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp') | float(999)) %}
-          {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u2 = is_state('binary_sensor.solarflow_2_temp_mode_ok', 'on') %}
           {{ fresh
              and vmin_ok
              and is_state('input_boolean.zendure_emergency_u2', 'off')
@@ -3758,11 +3743,7 @@ automation:
           {% set vol = states('sensor.solarflow_2_cell_min_vol')|float(0) if vmin_ok else 0 %}
           {% set out = states('sensor.solarflow_2_output_power')|float(0) %}
           {% set lim = states('sensor.solarflow_2_output_limit')|float(0) %}
-          {% set bt = states.sensor.solarflow_2_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_2_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp') | float(999)) %}
-          {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u2 = is_state('binary_sensor.solarflow_2_temp_mode_ok', 'on') %}
           {{ fresh
              and vmin_ok
              and is_state('input_boolean.zendure_emergency_u2', 'off')
@@ -3778,11 +3759,7 @@ automation:
       - trigger: template
         id: "stop_u2"
         value_template: >
-          {% set bt = states.sensor.solarflow_2_batt_max_temp %}
-          {% set ht = states.sensor.solarflow_2_temp %}
-          {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-          {% set t = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp') | float(999)) %}
-          {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+          {% set temp_mode_ok_u2 = is_state('binary_sensor.solarflow_2_temp_mode_ok', 'on') %}
           {{ is_state('input_boolean.zendure_emergency_u2', 'on')
              and (
                (states('sensor.solarflow_2_battery_level')|float(0) >= states('input_number.zendure_conf_soc_emerg_stop')|float(25)
@@ -3799,8 +3776,8 @@ automation:
         state: "on"
     actions:
       - variables:
-          t1: "{{ states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp')|float(0)) }}"
-          t2: "{{ states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp')|float(0)) }}"
+          t1: "{{ states('sensor.solarflow_1_operating_temp') | float(0) }}"
+          t2: "{{ states('sensor.solarflow_2_operating_temp') | float(0) }}"
           soc1: "{{ states('sensor.solarflow_1_battery_level') | float(0) }}"
           soc2: "{{ states('sensor.solarflow_2_battery_level') | float(0) }}"
           cl1: "{% if t1 < 5 %} 100 {% elif t1 < 10 %} 300 {% else %} 800 {% endif %}"
@@ -3816,11 +3793,7 @@ automation:
                 value_template: >
                   {% set s = states.sensor.solarflow_1_status_raw %}
                   {% set fresh = s is not none and s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] and (as_timestamp(now()) - as_timestamp(s.last_reported, 0)) < 120 %}
-                  {% set bt = states.sensor.solarflow_1_batt_max_temp %}
-                  {% set ht = states.sensor.solarflow_1_temp %}
-                  {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-                  {% set t = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp') | float(999)) %}
-                  {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+                  {% set temp_mode_ok_u1 = is_state('binary_sensor.solarflow_1_temp_mode_ok', 'on') %}
                   {% set soc = states('sensor.solarflow_1_battery_level')|float(100) %}
                   {% set soc_start = states('input_number.zendure_conf_soc_emerg_start')|float(15) %}
                   {% set soc_stop = states('input_number.zendure_conf_soc_emerg_stop')|float(25) %}
@@ -3908,11 +3881,7 @@ automation:
                   entity_id: !secret telegram_id1
                 data:
                   message: >
-                    {% set bt = states.sensor.solarflow_1_batt_max_temp %}
-                    {% set ht = states.sensor.solarflow_1_temp %}
-                    {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-                    {% set t = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp') | float(999)) %}
-                    {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+                    {% set temp_mode_ok_u1 = is_state('binary_sensor.solarflow_1_temp_mode_ok', 'on') %}
                     {% if not temp_mode_ok_u1 %}
                       ⚠️ *Zendure Notladung (Unit 1) abgebrochen*\nTemperatur nicht operativ.
                     {% else %}
@@ -3924,11 +3893,7 @@ automation:
                 value_template: >
                   {% set s = states.sensor.solarflow_2_status_raw %}
                   {% set fresh = s is not none and s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] and (as_timestamp(now()) - as_timestamp(s.last_reported, 0)) < 120 %}
-                  {% set bt = states.sensor.solarflow_2_batt_max_temp %}
-                  {% set ht = states.sensor.solarflow_2_temp %}
-                  {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-                  {% set t = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp') | float(999)) %}
-                  {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+                  {% set temp_mode_ok_u2 = is_state('binary_sensor.solarflow_2_temp_mode_ok', 'on') %}
                   {% set soc = states('sensor.solarflow_2_battery_level')|float(100) %}
                   {% set soc_start = states('input_number.zendure_conf_soc_emerg_start')|float(15) %}
                   {% set soc_stop = states('input_number.zendure_conf_soc_emerg_stop')|float(25) %}
@@ -4016,11 +3981,7 @@ automation:
                   entity_id: !secret telegram_id1
                 data:
                   message: >
-                    {% set bt = states.sensor.solarflow_2_batt_max_temp %}
-                    {% set ht = states.sensor.solarflow_2_temp %}
-                    {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
-                    {% set t = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp') | float(999)) %}
-                    {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+                    {% set temp_mode_ok_u2 = is_state('binary_sensor.solarflow_2_temp_mode_ok', 'on') %}
                     {% if not temp_mode_ok_u2 %}
                       ⚠️ *Zendure Notladung (Unit 2) abgebrochen*\nTemperatur nicht operativ.
                     {% else %}
