@@ -1626,4 +1626,14 @@
 # - Fix an issue where calibration would start even when last calibration was less than 14 days ago
 # - Fix an issue where there was an active output during calibration (even though the battery was ont at 100% yet)
 #
+# Changes V143:
+# - Previous version tried to hold the battery at 100% for 3 houts during calibration
+# - This has been changed to 5min because the 3 hours period seems useless after all
+# - Removed the calibration bypass logic that we introduced in the last update (didn't work anyway)
+#
+# Changes V144:
+# - Changed priorization to fully prioritize a unit that is at 100% battery level when another unit is not (bugfix)
+# - Optimized power input during calibration at battery levels 95% to 100% to be faster while still as healthy as possible
+# - Fixed an issue where the unit would not set a output after calibration has finished
+#
 ################################################################################
