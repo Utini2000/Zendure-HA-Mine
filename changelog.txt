@@ -1636,4 +1636,7 @@
 # - Optimized power input during calibration at battery levels 95% to 100% to be faster while still as healthy as possible
 # - Fixed an issue where the unit would not set a output after calibration has finished
 #
+# Changes V145:
+# - Removed any dead variables (cap_dyn_*)
+#
 ################################################################################
