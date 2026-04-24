@@ -989,16 +989,19 @@ script:
     fields:
       power:
         description: "Target input limit in W"
+      force:
+        description: "Send command immediately (ignore cooldown/check)"
     sequence:
       - variables:
           target: "{{ [0, [power | int(0), 800] | min] | max }}"
+          force_mode: "{{ force | default(false) }}"
           base: "{{ states('sensor.solarflow_1_setting_chargelimit') | int(-1) }}"
           ts_base: "{{ as_timestamp(states.sensor.solarflow_1_setting_chargelimit.last_updated, 0) }}"
           since_base: "{{ as_timestamp(now()) - ts_base }}"
           cmd_ok: "{{ since_base > 2.2 }}"
       - if:
           - condition: template
-            value_template: "{{ target != base and cmd_ok }}"
+            value_template: "{{ (target != base or force_mode) and (cmd_ok or force_mode) }}"
         then:
           - action: mqtt.publish
             data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ target }}", qos: 1 }
@@ -1009,16 +1012,19 @@ script:
     fields:
       power:
         description: "Target input limit in W"
+      force:
+        description: "Send command immediately (ignore cooldown/check)"
     sequence:
       - variables:
           target: "{{ [0, [power | int(0), 800] | min] | max }}"
+          force_mode: "{{ force | default(false) }}"
           base: "{{ states('sensor.solarflow_2_setting_chargelimit') | int(-1) }}"
           ts_base: "{{ as_timestamp(states.sensor.solarflow_2_setting_chargelimit.last_updated, 0) }}"
           since_base: "{{ as_timestamp(now()) - ts_base }}"
           cmd_ok: "{{ since_base > 2.2 }}"
       - if:
           - condition: template
-            value_template: "{{ target != base and cmd_ok }}"
+            value_template: "{{ (target != base or force_mode) and (cmd_ok or force_mode) }}"
         then:
           - action: mqtt.publish
             data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ target }}", qos: 1 }
@@ -3118,6 +3124,7 @@ automation:
           - action: script.zendure_dispatch_u1_inputlimit
             data:
               power: 0
+              force: true
           - action: notify.send_message
             target: { entity_id: !secret telegram_id1 }
             data:
@@ -3147,6 +3154,7 @@ automation:
           - action: script.zendure_dispatch_u2_inputlimit
             data:
               power: 0
+              force: true
           - action: notify.send_message
             target: { entity_id: !secret telegram_id1 }
             data:
@@ -3368,6 +3376,7 @@ automation:
                   - action: script.zendure_dispatch_u1_inputlimit
                     data:
                       power: 0
+                      force: true
               - conditions:
                   - condition: template
                     value_template: >
@@ -3421,6 +3430,7 @@ automation:
                   - action: script.zendure_dispatch_u2_inputlimit
                     data:
                       power: 0
+                      force: true
               - conditions:
                   - condition: template
                     value_template: >
