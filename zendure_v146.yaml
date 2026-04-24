@@ -115,6 +115,20 @@ input_number:
     step: 1
     mode: box
     initial: 0
+  zendure_last_inputlimit_u1:
+    name: "System: Letztes InputLimit U1"
+    min: 0
+    max: 800
+    step: 1
+    mode: box
+    initial: 0
+  zendure_last_inputlimit_u2:
+    name: "System: Letztes InputLimit U2"
+    min: 0
+    max: 800
+    step: 1
+    mode: box
+    initial: 0
   zendure_soc_drift_ref_u1:
     name: "Intern: SoC-Drift Referenz U1"
     min: 0
@@ -301,6 +315,10 @@ mqtt:
       state_topic: !secret zendure_topic_u1_number_chargeMaxLimit
       unit_of_measurement: "W"
       entity_category: diagnostic
+      value_template: >
+        {% set v = value | float(none) %}
+        {% if v is not none %}{{ v | int(0) }}
+        {% else %}{{ states('input_number.zendure_last_inputlimit_u1') | int(0) }}{% endif %}
 
     - name: "SolarFlow 1 Temp"
       unique_id: solarflow_1_temp_mqtt
@@ -444,6 +462,10 @@ mqtt:
       state_topic: !secret zendure_topic_u2_number_chargeMaxLimit
       unit_of_measurement: "W"
       entity_category: diagnostic
+      value_template: >
+        {% set v = value | float(none) %}
+        {% if v is not none %}{{ v | int(0) }}
+        {% else %}{{ states('input_number.zendure_last_inputlimit_u2') | int(0) }}{% endif %}
 
     - name: "SolarFlow 2 Temp"
       unique_id: solarflow_2_temp_mqtt
@@ -1005,6 +1027,10 @@ script:
         then:
           - action: mqtt.publish
             data: { topic: !secret zendure_topic_u1_number_inputLimit_set, payload: "{{ target }}", qos: 1 }
+          - action: input_number.set_value
+            target: { entity_id: input_number.zendure_last_inputlimit_u1 }
+            data:
+              value: "{{ target }}"
 
   zendure_dispatch_u2_inputlimit:
     alias: "Zendure: Dispatch U2 InputLimit"
@@ -1028,6 +1054,10 @@ script:
         then:
           - action: mqtt.publish
             data: { topic: !secret zendure_topic_u2_number_inputLimit_set, payload: "{{ target }}", qos: 1 }
+          - action: input_number.set_value
+            target: { entity_id: input_number.zendure_last_inputlimit_u2 }
+            data:
+              value: "{{ target }}"
 
   zendure_start_emergency_u1_manual:
     alias: "Zendure: Manual Emergency Start U1"
@@ -3121,6 +3151,11 @@ automation:
             data:
               mode: "Output mode"
               force: true
+          - action: mqtt.publish
+            data:
+              topic: !secret zendure_topic_u1_number_chargeMaxLimit_set
+              payload: "0"
+              qos: 1
           - action: script.zendure_dispatch_u1_inputlimit
             data:
               power: 0
@@ -3151,6 +3186,11 @@ automation:
             data:
               mode: "Output mode"
               force: true
+          - action: mqtt.publish
+            data:
+              topic: !secret zendure_topic_u2_number_chargeMaxLimit_set
+              payload: "0"
+              qos: 1
           - action: script.zendure_dispatch_u2_inputlimit
             data:
               power: 0
@@ -3373,6 +3413,11 @@ automation:
                     data:
                       mode: "Output mode"
                       force: true
+                  - action: mqtt.publish
+                    data:
+                      topic: !secret zendure_topic_u1_number_chargeMaxLimit_set
+                      payload: "0"
+                      qos: 1
                   - action: script.zendure_dispatch_u1_inputlimit
                     data:
                       power: 0
@@ -3427,6 +3472,11 @@ automation:
                     data:
                       mode: "Output mode"
                       force: true
+                  - action: mqtt.publish
+                    data:
+                      topic: !secret zendure_topic_u2_number_chargeMaxLimit_set
+                      payload: "0"
+                      qos: 1
                   - action: script.zendure_dispatch_u2_inputlimit
                     data:
                       power: 0
