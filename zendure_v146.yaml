@@ -4478,6 +4478,7 @@ automation:
                      and ac1.state == 'Input mode'
                      and states('input_text.zendure_ac_mode_u1') == 'Output mode'
                      and is_state('input_boolean.zendure_calib_mode_u1','off')
+                     and is_state('input_boolean.zendure_calib_discharge_u1','off')
                      and is_state('input_boolean.zendure_emergency_u1','off')
                      and (soc1 <= 10 or gin1 > 50) }}
             then:
@@ -4500,6 +4501,7 @@ automation:
                   {% set protect_charge = ac1 is not none and ac1.state == 'Input mode'
                      and is_state('input_text.zendure_ac_mode_u1','Output mode')
                      and is_state('input_boolean.zendure_calib_mode_u1','off')
+                     and is_state('input_boolean.zendure_calib_discharge_u1','off')
                      and is_state('input_boolean.zendure_emergency_u1','off')
                      and (soc1 <= 10 or gin1 > 50) %}
                   {{ states('sensor.solarflow_1_status_raw')|upper not in ['UNAVAILABLE', 'UNKNOWN', 'FAULT', 'ERROR']
@@ -4536,6 +4538,7 @@ automation:
                      and ac2.state == 'Input mode'
                      and states('input_text.zendure_ac_mode_u2') == 'Output mode'
                      and is_state('input_boolean.zendure_calib_mode_u2','off')
+                     and is_state('input_boolean.zendure_calib_discharge_u2','off')
                      and is_state('input_boolean.zendure_emergency_u2','off')
                      and (soc2 <= 10 or gin2 > 50) }}
             then:
@@ -4558,6 +4561,7 @@ automation:
                   {% set protect_charge = ac2 is not none and ac2.state == 'Input mode'
                      and is_state('input_text.zendure_ac_mode_u2','Output mode')
                      and is_state('input_boolean.zendure_calib_mode_u2','off')
+                     and is_state('input_boolean.zendure_calib_discharge_u2','off')
                      and is_state('input_boolean.zendure_emergency_u2','off')
                      and (soc2 <= 10 or gin2 > 50) %}
                   {{ states('sensor.solarflow_2_status_raw')|upper not in ['UNAVAILABLE', 'UNKNOWN', 'FAULT', 'ERROR']
