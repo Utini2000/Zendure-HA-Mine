@@ -3019,7 +3019,7 @@ automation:
                   entity_id: !secret telegram_id1
                 data:
                   message: >
-                    🧭 *Calibration U1 scheduled for tomorrow 12:00*
+                    🧭 *Calibration U1 queued (next low-PV window)*
                     Suspicious SoC drop detected without matching energy output
                     (ΔSoC {{ drop1 }}% in {{ age_min1 | round(0) }} min, vmin {{ states('sensor.solarflow_1_cell_min_vol') | float(0) | round(3) }} V).
 
@@ -3035,7 +3035,7 @@ automation:
                   entity_id: !secret telegram_id1
                 data:
                   message: >
-                    🧭 *Calibration U2 scheduled for tomorrow 12:00*
+                    🧭 *Calibration U2 queued (next low-PV window)*
                     Suspicious SoC drop detected without matching energy output
                     (ΔSoC {{ drop2 }}% in {{ age_min2 | round(0) }} min, vmin {{ states('sensor.solarflow_2_cell_min_vol') | float(0) | round(3) }} V).
 
@@ -3069,6 +3069,9 @@ automation:
       - trigger: time
         at: "20:00:00"
         id: "check_time"
+      - trigger: time
+        at: "10:00:00"
+        id: "day_cutoff"
 
       # Sofortiger Start bei Force Calib (z.B. durch Sag Confirm nachts oder tagsüber)
       - trigger: state
@@ -3087,6 +3090,22 @@ automation:
         entity_id: input_boolean.zendure_force_calib_u2
         to: "off"
         id: "force_stop_2"
+      - trigger: template
+        id: "pv_ready_u1"
+        value_template: >
+          {{ is_state('input_boolean.zendure_force_calib_u1', 'on')
+             and is_state('input_boolean.zendure_calib_mode_u1', 'off')
+             and is_state('input_boolean.zendure_calib_discharge_u1', 'off')
+             and states('sensor.solarflow_1_solar_input') | float(999) <= 20 }}
+        for: "00:05:00"
+      - trigger: template
+        id: "pv_ready_u2"
+        value_template: >
+          {{ is_state('input_boolean.zendure_force_calib_u2', 'on')
+             and is_state('input_boolean.zendure_calib_mode_u2', 'off')
+             and is_state('input_boolean.zendure_calib_discharge_u2', 'off')
+             and states('sensor.solarflow_2_solar_input') | float(999) <= 20 }}
+        for: "00:05:00"
 
       # Template-Trigger: Greift auch, wenn die Batterie schon VOR dem Start leer war!
       - trigger: template
@@ -3128,6 +3147,11 @@ automation:
             {{ 0 if ts == 0 else ((as_timestamp(now()) - ts) / 86400) | round(1) }}
           force_u1: "{{ is_state('input_boolean.zendure_force_calib_u1', 'on') }}"
           force_u2: "{{ is_state('input_boolean.zendure_force_calib_u2', 'on') }}"
+          s1_pv: "{{ states('sensor.solarflow_1_solar_input') | float(0) }}"
+          s2_pv: "{{ states('sensor.solarflow_2_solar_input') | float(0) }}"
+          pv_discharge_max: 20
+          vmin1: "{{ states('sensor.solarflow_1_cell_min_vol') | float(99) }}"
+          vmin2: "{{ states('sensor.solarflow_2_cell_min_vol') | float(99) }}"
 
       # --- START PHASE 1: ENTLADEN ---
       - if:
@@ -3135,7 +3159,10 @@ automation:
             value_template: >
               {{ (trigger.id == 'check_time' and (days_u1 >= days_cfg or force_u1))
                  or trigger.id == 'force_start_1'
-                 or (trigger.id == 'startup' and force_u1) }}
+                 or (trigger.id == 'startup' and force_u1)
+                 or trigger.id == 'pv_ready_u1' }}
+          - condition: template
+            value_template: "{{ s1_pv <= pv_discharge_max }}"
           - condition: state
             entity_id: input_boolean.zendure_calib_mode_u1
             state: "off"
@@ -3170,7 +3197,10 @@ automation:
             value_template: >
               {{ (trigger.id == 'check_time' and (days_u2 >= days_cfg or force_u2))
                  or trigger.id == 'force_start_2'
-                 or (trigger.id == 'startup' and force_u2) }}
+                 or (trigger.id == 'startup' and force_u2)
+                 or trigger.id == 'pv_ready_u2' }}
+          - condition: template
+            value_template: "{{ s2_pv <= pv_discharge_max }}"
           - condition: state
             entity_id: input_boolean.zendure_calib_mode_u2
             state: "off"
@@ -3204,6 +3234,34 @@ automation:
       - if:
           - condition: template
             value_template: >
+              {{ trigger.id == 'day_cutoff'
+                 and is_state('input_boolean.zendure_calib_discharge_u1', 'on')
+                 and vmin1 > 2.86 }}
+        then:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.zendure_calib_discharge_u1 }
+          - action: notify.send_message
+            target: { entity_id: !secret telegram_id1 }
+            data:
+              message: "🌤️ *Deep-Kalibrierung U1 pausiert (Tagbetrieb)*\nEntladung bis 10:00 nicht vollständig (vmin {{ vmin1|round(3) }}V). Unit läuft tagsüber normal und versucht die Entladung heute Nacht erneut."
+
+      - if:
+          - condition: template
+            value_template: >
+              {{ trigger.id == 'day_cutoff'
+                 and is_state('input_boolean.zendure_calib_discharge_u2', 'on')
+                 and vmin2 > 2.86 }}
+        then:
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.zendure_calib_discharge_u2 }
+          - action: notify.send_message
+            target: { entity_id: !secret telegram_id1 }
+            data:
+              message: "🌤️ *Deep-Kalibrierung U2 pausiert (Tagbetrieb)*\nEntladung bis 10:00 nicht vollständig (vmin {{ vmin2|round(3) }}V). Unit läuft tagsüber normal und versucht die Entladung heute Nacht erneut."
+
+      - if:
+          - condition: template
+            value_template: >
               {{ trigger.id == 'empty_u1' and is_state('input_boolean.zendure_calib_discharge_u1', 'on') }}
         then:
           - action: input_boolean.turn_off
@@ -3232,6 +3290,58 @@ automation:
               message: "🔄 *Deep-Kalibrierung U2 (Phase 2)*\nNullpunkt erreicht! Wartet auf Sonne für Voll-Ladung."
 
       # --- ABSCHLUSS (100% ERREICHT) ---
+      - if:
+          - condition: template
+            value_template: "{{ trigger.id == 'force_start_1' and s1_pv > pv_discharge_max }}"
+        then:
+          - action: notify.send_message
+            target: { entity_id: !secret telegram_id1 }
+            data:
+              message: "⏳ *Deep-Kalibrierung U1 wartet auf niedrige PV-Leistung*\nPV aktuell: {{ s1_pv|round(0) }}W. Entladephase startet automatisch bei <= {{ pv_discharge_max }}W."
+
+      - if:
+          - condition: template
+            value_template: "{{ trigger.id == 'force_start_2' and s2_pv > pv_discharge_max }}"
+        then:
+          - action: notify.send_message
+            target: { entity_id: !secret telegram_id1 }
+            data:
+              message: "⏳ *Deep-Kalibrierung U2 wartet auf niedrige PV-Leistung*\nPV aktuell: {{ s2_pv|round(0) }}W. Entladephase startet automatisch bei <= {{ pv_discharge_max }}W."
+
+      - if:
+          - condition: template
+            value_template: >
+              {{ trigger.id == 'force_stop_1'
+                 and (is_state('input_boolean.zendure_calib_discharge_u1','on')
+                      or is_state('input_boolean.zendure_calib_mode_u1','on')) }}
+        then:
+          - action: input_boolean.turn_off
+            target:
+              entity_id:
+                - input_boolean.zendure_calib_discharge_u1
+                - input_boolean.zendure_calib_mode_u1
+          - action: notify.send_message
+            target: { entity_id: !secret telegram_id1 }
+            data:
+              message: "🛑 *Kalibrierung U1 abgebrochen* (Force-Calib wurde manuell deaktiviert)."
+
+      - if:
+          - condition: template
+            value_template: >
+              {{ trigger.id == 'force_stop_2'
+                 and (is_state('input_boolean.zendure_calib_discharge_u2','on')
+                      or is_state('input_boolean.zendure_calib_mode_u2','on')) }}
+        then:
+          - action: input_boolean.turn_off
+            target:
+              entity_id:
+                - input_boolean.zendure_calib_discharge_u2
+                - input_boolean.zendure_calib_mode_u2
+          - action: notify.send_message
+            target: { entity_id: !secret telegram_id1 }
+            data:
+              message: "🛑 *Kalibrierung U2 abgebrochen* (Force-Calib wurde manuell deaktiviert)."
+
       - if:
           - condition: template
             value_template: >
