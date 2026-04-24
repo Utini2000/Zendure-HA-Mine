@@ -3345,6 +3345,40 @@ automation:
       - if:
           - condition: template
             value_template: >
+              {{ trigger.id == 'force_stop_1'
+                 and (is_state('input_boolean.zendure_calib_discharge_u1','on')
+                      or is_state('input_boolean.zendure_calib_mode_u1','on')) }}
+        then:
+          - action: input_boolean.turn_off
+            target:
+              entity_id:
+                - input_boolean.zendure_calib_discharge_u1
+                - input_boolean.zendure_calib_mode_u1
+          - action: notify.send_message
+            target: { entity_id: !secret telegram_id1 }
+            data:
+              message: "🛑 *Kalibrierung U1 abgebrochen* (Force-Calib wurde manuell deaktiviert)."
+
+      - if:
+          - condition: template
+            value_template: >
+              {{ trigger.id == 'force_stop_2'
+                 and (is_state('input_boolean.zendure_calib_discharge_u2','on')
+                      or is_state('input_boolean.zendure_calib_mode_u2','on')) }}
+        then:
+          - action: input_boolean.turn_off
+            target:
+              entity_id:
+                - input_boolean.zendure_calib_discharge_u2
+                - input_boolean.zendure_calib_mode_u2
+          - action: notify.send_message
+            target: { entity_id: !secret telegram_id1 }
+            data:
+              message: "🛑 *Kalibrierung U2 abgebrochen* (Force-Calib wurde manuell deaktiviert)."
+
+      - if:
+          - condition: template
+            value_template: >
               {{ trigger.id == 'stop_u1' and is_state('input_boolean.zendure_calib_mode_u1','on') }}
         then:
           - action: input_datetime.set_datetime
