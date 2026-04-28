@@ -66,3 +66,12 @@ Damit ist Phase 1 weiterhin eine kontrollierte, begrenzte Tiefentladung für die
      - Neben der bisherigen SoC-Gap-Prüfung reagiert der Loop jetzt auch auf **Full-SoC-Fehlverteilung**.
      - Beispiel: U1 ist voll (`>=99%`) und U2 deutlich niedriger (`<=97%`), aber U1-Anteil liegt trotzdem unter 55% -> Rebalance wird aktiv forciert.
    - Ziel: schnelleres Nachführen in genau den von dir genannten „gefühlt falschen“ Zeitfenstern.
+
+4. **Neustart-/Tagesfenster-Härtung für Phase 1**
+   - Phase 1 (Entladephase) wird nur noch im Zeitfenster **20:00–09:59** gestartet.
+   - Bei HA-Neustart tagsüber wird ein ggf. noch gesetzter `calib_discharge`-Status aktiv beendet.
+   - Damit verhindert man genau den Effekt „mittags nach Restart weiterhin `discharging_calib`“.
+
+5. **Konfliktschutz mit Notladung beim Phase-1-Start**
+   - Phase 1 startet zusätzlich nur, wenn die jeweilige Unit **nicht** in `emergency_u*` ist.
+   - Damit wird ein direkter Wettlauf „Notladung vs. neuer Entlade-Start“ weiter reduziert.

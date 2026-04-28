@@ -3156,6 +3156,22 @@ automation:
           pv_discharge_max: 20
           vmin1: "{{ states('sensor.solarflow_1_cell_min_vol') | float(99) }}"
           vmin2: "{{ states('sensor.solarflow_2_cell_min_vol') | float(99) }}"
+          phase1_window: "{{ now().hour >= 20 or now().hour < 10 }}"
+
+      # --- STARTUP-DAY GUARD: Bei HA-Neustart tagsüber keine Entladephase laufen lassen ---
+      - if:
+          - condition: template
+            value_template: >
+              {{ trigger.id == 'startup'
+                 and not (phase1_window | bool)
+                 and (is_state('input_boolean.zendure_calib_discharge_u1', 'on')
+                      or is_state('input_boolean.zendure_calib_discharge_u2', 'on')) }}
+        then:
+          - action: input_boolean.turn_off
+            target:
+              entity_id:
+                - input_boolean.zendure_calib_discharge_u1
+                - input_boolean.zendure_calib_discharge_u2
 
       # --- START PHASE 1: ENTLADEN ---
       - if:
@@ -3166,12 +3182,17 @@ automation:
                  or (trigger.id == 'startup' and force_u1)
                  or trigger.id == 'pv_ready_u1' }}
           - condition: template
+            value_template: "{{ phase1_window | bool }}"
+          - condition: template
             value_template: "{{ s1_pv <= pv_discharge_max }}"
           - condition: state
             entity_id: input_boolean.zendure_calib_mode_u1
             state: "off"
           - condition: state
             entity_id: input_boolean.zendure_calib_discharge_u1
+            state: "off"
+          - condition: state
+            entity_id: input_boolean.zendure_emergency_u1
             state: "off"
         then:
           - action: input_boolean.turn_on
@@ -3204,12 +3225,17 @@ automation:
                  or (trigger.id == 'startup' and force_u2)
                  or trigger.id == 'pv_ready_u2' }}
           - condition: template
+            value_template: "{{ phase1_window | bool }}"
+          - condition: template
             value_template: "{{ s2_pv <= pv_discharge_max }}"
           - condition: state
             entity_id: input_boolean.zendure_calib_mode_u2
             state: "off"
           - condition: state
             entity_id: input_boolean.zendure_calib_discharge_u2
+            state: "off"
+          - condition: state
+            entity_id: input_boolean.zendure_emergency_u2
             state: "off"
         then:
           - action: input_boolean.turn_on
