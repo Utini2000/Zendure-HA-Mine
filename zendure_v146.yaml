@@ -1953,9 +1953,13 @@ automation:
             {% set both_ready = s1_ok|bool and s2_ok|bool and not busy_u1 and not busy_u2 and (actual_total|int(0)) > 100 and v1_min > 3.10 and v2_min > 3.10 %}
             {% set ideal = (soc1_val / (soc1_val + soc2_val)) if (soc1_valid and soc2_valid and (soc1_val + soc2_val) > 0) else 0.5 %}
             {% set actual_share = (actual_1|float(0) / (actual_total|float(1))) if (actual_total|float(0)) > 50 else ideal %}
-            {{ both_ready
-               and ((soc1_val - soc2_val)|abs >= 4)
-               and ((actual_share - ideal)|abs >= 0.15) }}
+            {% set soc_gap_misaligned = ((soc1_val - soc2_val)|abs >= 4) and ((actual_share - ideal)|abs >= 0.15) %}
+            {% set full_soc_misaligned = (
+                 (soc1_val >= 99 and soc2_val <= 97 and actual_share < 0.55)
+                 or
+                 (soc2_val >= 99 and soc1_val <= 97 and actual_share > 0.45)
+               ) %}
+            {{ both_ready and (soc_gap_misaligned or full_soc_misaligned) }}
 
       - condition: template
         value_template: >
@@ -3152,6 +3156,22 @@ automation:
           pv_discharge_max: 20
           vmin1: "{{ states('sensor.solarflow_1_cell_min_vol') | float(99) }}"
           vmin2: "{{ states('sensor.solarflow_2_cell_min_vol') | float(99) }}"
+          phase1_window: "{{ now().hour >= 20 or now().hour < 10 }}"
+
+      # --- STARTUP-DAY GUARD: Bei HA-Neustart tagsüber keine Entladephase laufen lassen ---
+      - if:
+          - condition: template
+            value_template: >
+              {{ trigger.id == 'startup'
+                 and not (phase1_window | bool)
+                 and (is_state('input_boolean.zendure_calib_discharge_u1', 'on')
+                      or is_state('input_boolean.zendure_calib_discharge_u2', 'on')) }}
+        then:
+          - action: input_boolean.turn_off
+            target:
+              entity_id:
+                - input_boolean.zendure_calib_discharge_u1
+                - input_boolean.zendure_calib_discharge_u2
 
       # --- START PHASE 1: ENTLADEN ---
       - if:
@@ -3162,12 +3182,17 @@ automation:
                  or (trigger.id == 'startup' and force_u1)
                  or trigger.id == 'pv_ready_u1' }}
           - condition: template
+            value_template: "{{ phase1_window | bool }}"
+          - condition: template
             value_template: "{{ s1_pv <= pv_discharge_max }}"
           - condition: state
             entity_id: input_boolean.zendure_calib_mode_u1
             state: "off"
           - condition: state
             entity_id: input_boolean.zendure_calib_discharge_u1
+            state: "off"
+          - condition: state
+            entity_id: input_boolean.zendure_emergency_u1
             state: "off"
         then:
           - action: input_boolean.turn_on
@@ -3200,12 +3225,17 @@ automation:
                  or (trigger.id == 'startup' and force_u2)
                  or trigger.id == 'pv_ready_u2' }}
           - condition: template
+            value_template: "{{ phase1_window | bool }}"
+          - condition: template
             value_template: "{{ s2_pv <= pv_discharge_max }}"
           - condition: state
             entity_id: input_boolean.zendure_calib_mode_u2
             state: "off"
           - condition: state
             entity_id: input_boolean.zendure_calib_discharge_u2
+            state: "off"
+          - condition: state
+            entity_id: input_boolean.zendure_emergency_u2
             state: "off"
         then:
           - action: input_boolean.turn_on
@@ -3785,6 +3815,7 @@ automation:
              and is_state('input_boolean.zendure_emergency_u1', 'off')
              and is_state('input_boolean.zendure_vguard_u1', 'off')
              and is_state('input_boolean.zendure_calib_mode_u1', 'off')
+             and is_state('input_boolean.zendure_calib_discharge_u1', 'off')
              and states('sensor.solarflow_total_solar_input')|float(0) < 150
              and soc <= states('input_number.zendure_conf_soc_emerg_start')|float(15)
              and temp_mode_ok_u1 }}
@@ -3809,6 +3840,7 @@ automation:
              and is_state('input_boolean.zendure_emergency_u1', 'off')
              and is_state('input_boolean.zendure_vguard_u1', 'off')
              and is_state('input_boolean.zendure_calib_mode_u1', 'off')
+             and is_state('input_boolean.zendure_calib_discharge_u1', 'off')
              and states('sensor.solarflow_total_solar_input')|float(0) < 150
              and vol <= 3.05
              and soc < (states('input_number.zendure_conf_soc_emerg_stop')|float(25) + 2)
@@ -3834,6 +3866,7 @@ automation:
              and is_state('input_boolean.zendure_emergency_u1', 'off')
              and is_state('input_boolean.zendure_vguard_u1', 'off')
              and is_state('input_boolean.zendure_calib_mode_u1', 'off')
+             and is_state('input_boolean.zendure_calib_discharge_u1', 'off')
              and states('sensor.solarflow_total_solar_input')|float(0) < 150
              and vol <= 3.00
              and (out > 80 or lim > 100)
@@ -3878,6 +3911,7 @@ automation:
              and is_state('input_boolean.zendure_emergency_u2', 'off')
              and is_state('input_boolean.zendure_vguard_u2', 'off')
              and is_state('input_boolean.zendure_calib_mode_u2', 'off')
+             and is_state('input_boolean.zendure_calib_discharge_u2', 'off')
              and states('sensor.solarflow_total_solar_input')|float(0) < 150
              and soc <= states('input_number.zendure_conf_soc_emerg_start')|float(15)
              and temp_mode_ok_u2 }}
@@ -3902,6 +3936,7 @@ automation:
              and is_state('input_boolean.zendure_emergency_u2', 'off')
              and is_state('input_boolean.zendure_vguard_u2', 'off')
              and is_state('input_boolean.zendure_calib_mode_u2', 'off')
+             and is_state('input_boolean.zendure_calib_discharge_u2', 'off')
              and states('sensor.solarflow_total_solar_input')|float(0) < 150
              and vol <= 3.05
              and soc < (states('input_number.zendure_conf_soc_emerg_stop')|float(25) + 2)
@@ -3927,6 +3962,7 @@ automation:
              and is_state('input_boolean.zendure_emergency_u2', 'off')
              and is_state('input_boolean.zendure_vguard_u2', 'off')
              and is_state('input_boolean.zendure_calib_mode_u2', 'off')
+             and is_state('input_boolean.zendure_calib_discharge_u2', 'off')
              and states('sensor.solarflow_total_solar_input')|float(0) < 150
              and vol <= 3.00
              and (out > 80 or lim > 100)
@@ -3989,6 +4025,7 @@ automation:
                      and fresh
                      and is_state('input_boolean.zendure_emergency_u1', 'off')
                      and is_state('input_boolean.zendure_calib_mode_u1', 'off')
+                     and is_state('input_boolean.zendure_calib_discharge_u1', 'off')
                      and states('sensor.solarflow_total_solar_input')|float(0) < 150
                      and (
                        soc <= soc_start
@@ -4097,6 +4134,7 @@ automation:
                      and fresh
                      and is_state('input_boolean.zendure_emergency_u2', 'off')
                      and is_state('input_boolean.zendure_calib_mode_u2', 'off')
+                     and is_state('input_boolean.zendure_calib_discharge_u2', 'off')
                      and states('sensor.solarflow_total_solar_input')|float(0) < 150
                      and (
                        soc <= soc_start
