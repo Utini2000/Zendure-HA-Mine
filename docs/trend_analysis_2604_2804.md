@@ -49,6 +49,9 @@ Phase 1 ist weiterhin abgesichert und nicht „schutzlos“:
 
 Damit ist Phase 1 weiterhin eine kontrollierte, begrenzte Tiefentladung für die Kalibrierung und kein ungeschütztes „Leerziehen“.
 
+**Wichtig:** „absolut schadfrei“ kann technisch niemand seriös garantieren (Alterung/Chemie/Temperatur).  
+Die Logik ist aber auf **risikoarm und begrenzt** ausgelegt (Spannungsgrenzen, Temperaturgrenzen, Übergang in Phase 2).
+
 ## Umgesetzte Korrekturen / Klarstellung
 
 1. **Emergency-vs-Calibration Konflikt behoben**
@@ -75,3 +78,16 @@ Damit ist Phase 1 weiterhin eine kontrollierte, begrenzte Tiefentladung für die
 5. **Konfliktschutz mit Notladung beim Phase-1-Start**
    - Phase 1 startet zusätzlich nur, wenn die jeweilige Unit **nicht** in `emergency_u*` ist.
    - Damit wird ein direkter Wettlauf „Notladung vs. neuer Entlade-Start“ weiter reduziert.
+
+6. **Notladung weniger „hart verdrahtet“ (PV-Sensitivität konfigurierbar)**
+   - Die PV-Startgrenze für Auto-Notladung ist nun als Helper hinterlegt: `zendure_conf_emerg_pv_gate` (Default 150 W).
+   - Damit kann die Sensitivität bei Bedarf angepasst werden, ohne den Code erneut zu ändern.
+
+7. **Phase-1-Start/Stop PV-geführt statt „blind nach Uhrzeit“**
+   - Start Phase 1 jetzt über Low-PV-Fenster (`<=10 W` für 15 min) statt „hart um 20:00 sofort starten“.
+   - Pause/Abbruch der Entladephase bei PV-Rückkehr (`>= calib_pv_high` für 5 min) statt „hart um 10:00“.
+   - Falls bei 5% SoC kein weiteres Entladen möglich ist, wird Phase 1 ebenfalls beendet und in Phase 2 überführt.
+
+8. **Dashboard-Sensor „Remaining Time“**
+   - Neuer Sensor `sensor.solarflow_remaining_time_5m_avg` (in Stunden) inklusive Attribut `pretty` (HH:MM).
+   - Basis: verbleibende Energie aus konfigurierbarer U1/U2-Kapazität (Wh) / Lastmittelwert der letzten 5 Minuten.
