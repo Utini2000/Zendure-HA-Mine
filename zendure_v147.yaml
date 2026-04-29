@@ -840,30 +840,46 @@ template:
           {% set wh2 = (c2 * soc2 / 100) %}
           {{ [wh1 + wh2, 0] | max | round(0) }}
 
+      - name: "SolarFlow Remaining Usable Energy"
+        unique_id: solarflow_remaining_usable_energy_wh
+        default_entity_id: sensor.solarflow_remaining_usable_energy
+        unit_of_measurement: "Wh"
+        device_class: energy
+        state_class: measurement
+        state: >
+          {% set soc1 = states('sensor.solarflow_1_battery_level') | float(0) %}
+          {% set soc2 = states('sensor.solarflow_2_battery_level') | float(0) %}
+          {% set c1 = states('input_number.zendure_conf_u1_capacity_wh') | float(1920) %}
+          {% set c2 = states('input_number.zendure_conf_u2_capacity_wh') | float(1920) %}
+          {% set soc_off = states('input_number.zendure_conf_soc_off') | float(20) %}
+          {% set usable1 = c1 * ((soc1 - soc_off) / 100) %}
+          {% set usable2 = c2 * ((soc2 - soc_off) / 100) %}
+          {{ [usable1 + usable2, 0] | max | round(0) }}
+
       - name: "SolarFlow Remaining Time (5m Avg)"
         unique_id: solarflow_remaining_time_5m_avg_h
         default_entity_id: sensor.solarflow_remaining_time_5m_avg
         unit_of_measurement: "h"
         icon: mdi:timer-sand
         state: >
-          {% set remaining_wh = states('sensor.solarflow_remaining_energy') | float(0) %}
-          {% set load_w = states('sensor.zendure_load_mean_5m') | float(0) %}
-          {% if load_w < 30 %}
+          {% set remaining_wh = states('sensor.solarflow_remaining_usable_energy') | float(0) %}
+          {% set discharge_w = states('sensor.solarflow_discharge_mean_60s') | float(0) %}
+          {% if discharge_w < 30 %}
             unknown
           {% else %}
-            {{ (remaining_wh / load_w) | round(1) }}
+            {{ (remaining_wh / discharge_w) | round(1) }}
           {% endif %}
         attributes:
-          based_on: "sensor.zendure_load_mean_5m"
+          based_on: "sensor.solarflow_discharge_mean_60s"
           precision: "0.1h (~6min), anti-spam"
-          note: "remaining_wh / avg_load_w (5m)"
+          note: "usable_remaining_wh / avg_battery_discharge_w (60s)"
           pretty: >
-            {% set remaining_wh = states('sensor.solarflow_remaining_energy') | float(0) %}
-            {% set load_w = states('sensor.zendure_load_mean_5m') | float(0) %}
-            {% if load_w < 30 %}
+            {% set remaining_wh = states('sensor.solarflow_remaining_usable_energy') | float(0) %}
+            {% set discharge_w = states('sensor.solarflow_discharge_mean_60s') | float(0) %}
+            {% if discharge_w < 30 %}
               n/a
             {% else %}
-              {% set h = (remaining_wh / load_w) %}
+              {% set h = (remaining_wh / discharge_w) %}
               {% set total_min = (h * 60) | int(0) %}
               {% set hh = (total_min // 60) | int(0) %}
               {% set mm = (total_min % 60) | int(0) %}
@@ -933,6 +949,15 @@ sensor:
     sampling_size: 600
     max_age:
       minutes: 5
+
+  - platform: statistics
+    entity_id: sensor.solarflow_system_total_discharge_power_v24
+    name: "SolarFlow Discharge Mean 60s"
+    unique_id: solarflow_discharge_mean_60s
+    state_characteristic: mean
+    sampling_size: 120
+    max_age:
+      seconds: 60
 
 # ==============================================================================
 # 5. SCRIPTS (RESET/SAFETY HELPERS)
