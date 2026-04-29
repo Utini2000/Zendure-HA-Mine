@@ -187,7 +187,7 @@ input_number:
     min: 0
     max: 800
     step: 10
-    initial: 150
+    initial: 0
     unit_of_measurement: "W"
 
   zendure_conf_floor_u2_w:
@@ -195,7 +195,7 @@ input_number:
     min: 0
     max: 800
     step: 10
-    initial: 150
+    initial: 0
     unit_of_measurement: "W"
 
   zendure_conf_soc_off:
@@ -864,27 +864,21 @@ template:
         state: >
           {% set remaining_wh = states('sensor.solarflow_remaining_usable_energy') | float(0) %}
           {% set discharge_w = states('sensor.solarflow_discharge_mean_60s') | float(0) %}
-          {% if discharge_w < 30 %}
-            unknown
-          {% else %}
-            {{ (remaining_wh / discharge_w) | round(1) }}
-          {% endif %}
+          {% set effective_w = [discharge_w, 30] | max %}
+          {{ (remaining_wh / effective_w) | round(1) }}
         attributes:
           based_on: "sensor.solarflow_discharge_mean_60s"
           precision: "0.1h (~6min), anti-spam"
-          note: "usable_remaining_wh / avg_battery_discharge_w (60s)"
+          note: "usable_remaining_wh / max(avg_battery_discharge_w_60s, 30W)"
           pretty: >
             {% set remaining_wh = states('sensor.solarflow_remaining_usable_energy') | float(0) %}
             {% set discharge_w = states('sensor.solarflow_discharge_mean_60s') | float(0) %}
-            {% if discharge_w < 30 %}
-              n/a
-            {% else %}
-              {% set h = (remaining_wh / discharge_w) %}
-              {% set total_min = (h * 60) | int(0) %}
-              {% set hh = (total_min // 60) | int(0) %}
-              {% set mm = (total_min % 60) | int(0) %}
-              {{ '%02d:%02d' | format(hh, mm) }}
-            {% endif %}
+            {% set effective_w = [discharge_w, 30] | max %}
+            {% set h = (remaining_wh / effective_w) %}
+            {% set total_min = (h * 60) | int(0) %}
+            {% set hh = (total_min // 60) | int(0) %}
+            {% set mm = (total_min % 60) | int(0) %}
+            {{ '%02d:%02d' | format(hh, mm) }}
 
 # ==============================================================================
 # 4. ENERGY SENSORS (RIEMANN SUM)
@@ -1959,14 +1953,8 @@ automation:
             {% elif v2_min < 3.15 and not dis2 %}{{ 300 if soc2_val > 30 else 220 }}
             {% else %}800{% endif %}
 
-          floor_1: >-
-            {% if floor_latch_u1 and soc1_valid and not busy_u1 %}
-              {{ floor_cfg_u1 | int(150) }}
-            {% else %} 0 {% endif %}
-          floor_2: >-
-            {% if floor_latch_u2 and soc2_valid and not busy_u2 %}
-              {{ floor_cfg_u2 | int(150) }}
-            {% else %} 0 {% endif %}
+          floor_1: "0"
+          floor_2: "0"
 
           global_max: "{{ states('input_number.zendure_conf_max_output') | int(1000) }}"
           available_capacity: "{{ [ (global_max|int(0) - ghost_total|int(0)), 0 ] | max }}"
