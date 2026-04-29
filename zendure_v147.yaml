@@ -851,10 +851,11 @@ template:
           {% if load_w < 30 %}
             unknown
           {% else %}
-            {{ (remaining_wh / load_w) | round(2) }}
+            {{ (remaining_wh / load_w) | round(1) }}
           {% endif %}
         attributes:
           based_on: "sensor.zendure_load_mean_5m"
+          precision: "0.1h (~6min), anti-spam"
           note: "remaining_wh / avg_load_w (5m)"
           pretty: >
             {% set remaining_wh = states('sensor.solarflow_remaining_energy') | float(0) %}
