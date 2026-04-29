@@ -833,18 +833,22 @@ template:
         unit_of_measurement: "h"
         icon: mdi:timer-sand
         state: >
-          {% set remaining_wh = states('sensor.solarflow_remaining_usable_energy') | float(0) %}
+          {% set remaining_wh = states('sensor.solarflow_remaining_energy') | float(0) %}
+          {% set load_w = states('sensor.zendure_load_mean_5m') | float(0) | abs %}
           {% set discharge_w = states('sensor.solarflow_discharge_mean_60s') | float(0) %}
-          {% set effective_w = [discharge_w, 30] | max %}
+          {% set draw_w = [load_w, discharge_w] | max %}
+          {% set effective_w = [draw_w, 30] | max %}
           {{ (remaining_wh / effective_w) | round(1) }}
         attributes:
-          based_on: "sensor.solarflow_discharge_mean_60s"
+          based_on: "max(sensor.zendure_load_mean_5m, sensor.solarflow_discharge_mean_60s)"
           precision: "0.1h (~6min), anti-spam"
-          note: "usable_remaining_wh / max(avg_battery_discharge_w_60s, 30W)"
+          note: "remaining_wh / max(max(load_mean_5m, discharge_mean_60s), 30W)"
           pretty: >
-            {% set remaining_wh = states('sensor.solarflow_remaining_usable_energy') | float(0) %}
+            {% set remaining_wh = states('sensor.solarflow_remaining_energy') | float(0) %}
+            {% set load_w = states('sensor.zendure_load_mean_5m') | float(0) | abs %}
             {% set discharge_w = states('sensor.solarflow_discharge_mean_60s') | float(0) %}
-            {% set effective_w = [discharge_w, 30] | max %}
+            {% set draw_w = [load_w, discharge_w] | max %}
+            {% set effective_w = [draw_w, 30] | max %}
             {% set h = (remaining_wh / effective_w) %}
             {% set total_min = (h * 60) | int(0) %}
             {% set hh = (total_min // 60) | int(0) %}
