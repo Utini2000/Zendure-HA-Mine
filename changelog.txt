@@ -1648,4 +1648,12 @@
 #   AC Input will be allowed to be used after 13:00h, until that point it is PV input only
 #   After 13:00h the script will dynamically switch between PV / AC input
 #
+# Changes V147:
+# - Additional fixes regarding new deep calibration
+# - New sensor "sensor.solarflow_remaining_time_5m_avg" to show the estimated remaining battery time left
+# - Completely removed hard_floor when the unit is at 100% because it is not possible to be used reliably with Zendure hardware
+#
+# Changes V148:
+# - Code cleanup / maintenance
+#
 ################################################################################
