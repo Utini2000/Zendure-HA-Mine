@@ -3364,8 +3364,8 @@ automation:
             target: { entity_id: !secret telegram_id1 }
             data:
               message: >
-                ⚠️ *Deep-Kalibrierung U1 nicht gestartet*  
-                Grund: {% if not (phase1_window | bool) %}außerhalb Phase-1-Zeitfenster (20:00–09:59){% elif s1_pv > pv_discharge_max %}PV zu hoch ({{ s1_pv|round(0) }}W > {{ pv_discharge_max }}W){% elif is_state('input_boolean.zendure_emergency_u1','on') %}Notladung aktiv{% elif is_state('input_boolean.zendure_calib_mode_u1','on') %}bereits in Phase 2 (Calib-Mode){% else %}unbekannt{% endif %}.  
+                ⚠️ *Deep-Kalibrierung U1 nicht gestartet*
+                Grund: {% if not (phase1_window | bool) %}außerhalb Phase-1-Zeitfenster (20:00–09:59){% elif s1_pv > pv_discharge_max %}PV zu hoch ({{ s1_pv|round(0) }}W > {{ pv_discharge_max }}W){% elif is_state('input_boolean.zendure_emergency_u1','on') %}Notladung aktiv{% elif is_state('input_boolean.zendure_calib_mode_u1','on') %}bereits in Phase 2 (Calib-Mode){% else %}unbekannt{% endif %}.
                 Entladephase startet automatisch, sobald die Bedingungen erfüllt sind.
 
       - if:
@@ -3384,8 +3384,8 @@ automation:
             target: { entity_id: !secret telegram_id1 }
             data:
               message: >
-                ⚠️ *Deep-Kalibrierung U2 nicht gestartet*  
-                Grund: {% if not (phase1_window | bool) %}außerhalb Phase-1-Zeitfenster (20:00–09:59){% elif s2_pv > pv_discharge_max %}PV zu hoch ({{ s2_pv|round(0) }}W > {{ pv_discharge_max }}W){% elif is_state('input_boolean.zendure_emergency_u2','on') %}Notladung aktiv{% elif is_state('input_boolean.zendure_calib_mode_u2','on') %}bereits in Phase 2 (Calib-Mode){% else %}unbekannt{% endif %}.  
+                ⚠️ *Deep-Kalibrierung U2 nicht gestartet*
+                Grund: {% if not (phase1_window | bool) %}außerhalb Phase-1-Zeitfenster (20:00–09:59){% elif s2_pv > pv_discharge_max %}PV zu hoch ({{ s2_pv|round(0) }}W > {{ pv_discharge_max }}W){% elif is_state('input_boolean.zendure_emergency_u2','on') %}Notladung aktiv{% elif is_state('input_boolean.zendure_calib_mode_u2','on') %}bereits in Phase 2 (Calib-Mode){% else %}unbekannt{% endif %}.
                 Entladephase startet automatisch, sobald die Bedingungen erfüllt sind.
 
       - if:
