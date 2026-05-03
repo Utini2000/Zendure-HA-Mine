@@ -1405,6 +1405,19 @@ automation:
             - input_boolean.zendure_force_calib_u1
             - input_boolean.zendure_force_calib_u2
 
+      - action: input_datetime.set_datetime
+        target: { entity_id: input_datetime.zendure_natural_full_hold_start_u1 }
+        data: { timestamp: 0 }
+      - action: input_datetime.set_datetime
+        target: { entity_id: input_datetime.zendure_natural_balance_start_u1 }
+        data: { timestamp: 0 }
+      - action: input_datetime.set_datetime
+        target: { entity_id: input_datetime.zendure_natural_full_hold_start_u2 }
+        data: { timestamp: 0 }
+      - action: input_datetime.set_datetime
+        target: { entity_id: input_datetime.zendure_natural_balance_start_u2 }
+        data: { timestamp: 0 }
+
       - repeat:
           count: 3
           sequence:
@@ -4374,6 +4387,10 @@ automation:
                           or states('input_number.zendure_last_sent_1')|int(-1) != 0
                       ) }}
                 sequence:
+                  - action: script.zendure_dispatch_u1_inputlimit
+                    data:
+                      power: 0
+                      force: true
                   - action: script.zendure_dispatch_u1_ac_mode
                     data:
                       mode: "Output mode"
@@ -4453,6 +4470,10 @@ automation:
                           or states('input_number.zendure_last_sent_2')|int(-1) != 0
                       ) }}
                 sequence:
+                  - action: script.zendure_dispatch_u2_inputlimit
+                    data:
+                      power: 0
+                      force: true
                   - action: script.zendure_dispatch_u2_ac_mode
                     data:
                       mode: "Output mode"
@@ -4487,10 +4508,9 @@ automation:
         entity_id: input_boolean.zendure_auto_mode
         state: "on"
     actions:
-      - choose:
-          - conditions:
-              - condition: template
-                value_template: >
+      - if:
+          - condition: template
+            value_template: >
                   {% set s = states.sensor.solarflow_1_status_raw %}
                   {% set fresh = s is not none and s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] and (as_timestamp(now()) - as_timestamp(s.last_reported, 0)) < 120 %}
                   {% set bt = states.sensor.solarflow_1_batt_max_temp %}
@@ -4508,7 +4528,7 @@ automation:
                        states('sensor.solarflow_1_battery_level')|float(100) <= states('input_number.zendure_conf_soc_emerg_start')|float(15)
                        or states('sensor.solarflow_1_cell_min_vol')|float(99) <= 3.00
                      ) }}
-            sequence:
+        then:
               - action: input_boolean.turn_off
                 target: { entity_id: input_boolean.zendure_vguard_u1 }
               - action: input_boolean.turn_off
@@ -4544,9 +4564,9 @@ automation:
                   entity_id: !secret telegram_id1
                 data:
                   message: "🔋 *VGuard→Emergency U1*\nKritischer Low-SoC erkannt, VGuard freigegeben und Notladung mit {{ limit_emerg_u1|int }}W gestartet."
-          - conditions:
-              - condition: template
-                value_template: >
+      - if:
+          - condition: template
+            value_template: >
                   {% set s = states.sensor.solarflow_2_status_raw %}
                   {% set fresh = s is not none and s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] and (as_timestamp(now()) - as_timestamp(s.last_reported, 0)) < 120 %}
                   {% set bt = states.sensor.solarflow_2_batt_max_temp %}
@@ -4564,7 +4584,7 @@ automation:
                        states('sensor.solarflow_2_battery_level')|float(100) <= states('input_number.zendure_conf_soc_emerg_start')|float(15)
                        or states('sensor.solarflow_2_cell_min_vol')|float(99) <= 3.00
                      ) }}
-            sequence:
+        then:
               - action: input_boolean.turn_off
                 target: { entity_id: input_boolean.zendure_vguard_u2 }
               - action: input_boolean.turn_off
@@ -4832,6 +4852,100 @@ automation:
           ss2: "{% if soc2 < 12 %} 300 {% else %} 800 {% endif %}"
           limit_emerg_u1: "{{ [300, cl1|int, ss1|int]|min }}"
           limit_emerg_u2: "{{ [300, cl2|int, ss2|int]|min }}"
+
+      - if:
+          - condition: template
+            value_template: >
+              {% set s = states.sensor.solarflow_1_status_raw %}
+              {% set fresh = s is not none and s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] and (as_timestamp(now()) - as_timestamp(s.last_reported, 0)) < 120 %}
+              {% set bt = states.sensor.solarflow_1_batt_max_temp %}
+              {% set ht = states.sensor.solarflow_1_temp %}
+              {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
+              {% set t = states('sensor.solarflow_1_batt_max_temp') | float(states('sensor.solarflow_1_temp') | float(999)) %}
+              {% set temp_mode_ok_u1 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_1_heizung', 'Aktiv') %}
+              {% set soc = states('sensor.solarflow_1_battery_level')|float(100) %}
+              {% set soc_start = states('input_number.zendure_conf_soc_emerg_start')|float(15) %}
+              {% set soc_stop = states('input_number.zendure_conf_soc_emerg_stop')|float(25) %}
+              {% set ac_input = states('sensor.solarflow_1_ac_mode') == 'Input mode' %}
+              {% set grid_in = states('sensor.solarflow_1_grid_input_power')|float(0) > 50 %}
+              {{ trigger.id == 'boot_check'
+                 and fresh
+                 and is_state('input_boolean.zendure_emergency_u1', 'off')
+                 and is_state('input_boolean.zendure_calib_mode_u1', 'off')
+                 and (states('sensor.solarflow_1_cell_min_vol')|float(99) <= 2.95 or states('sensor.solarflow_total_solar_input')|float(0) < states('input_number.zendure_conf_emerg_pv_gate')|float(150))
+                 and (is_state('input_boolean.zendure_calib_discharge_u1','off') or soc <= 6 or states('sensor.solarflow_1_cell_min_vol')|float(99) <= 3.08)
+                 and (soc <= soc_start or states('sensor.solarflow_1_cell_min_vol')|float(99) <= 3.00 or (soc < soc_stop and (ac_input or grid_in)))
+                 and temp_mode_ok_u1 }}
+        then:
+          - action: input_boolean.turn_off
+            target:
+              entity_id:
+                - input_boolean.zendure_calib_discharge_u1
+                - input_boolean.zendure_calib_mode_u1
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.zendure_emergency_u1 }
+          - action: input_text.set_value
+            target: { entity_id: input_text.zendure_ac_mode_u1 }
+            data: { value: "Input mode" }
+          - action: script.zendure_dispatch_u1_ac_mode
+            data: { mode: "Input mode", force: true }
+          - action: script.zendure_set_u1_outputlimit_zero
+          - action: script.zendure_dispatch_u1_inputlimit
+            data: { power: "{{ limit_emerg_u1 }}", force: true }
+          - action: input_number.set_value
+            target: { entity_id: input_number.zendure_last_sent_1 }
+            data: { value: 0 }
+          - action: notify.send_message
+            target: { entity_id: !secret telegram_id1 }
+            data:
+              message: "🔋 *Zendure Notladung (Unit 1)*\nSofortstart nach HA-Neustart (kritischer Low-SoC erkannt)."
+
+      - if:
+          - condition: template
+            value_template: >
+              {% set s = states.sensor.solarflow_2_status_raw %}
+              {% set fresh = s is not none and s.state|upper not in ['UNAVAILABLE','UNKNOWN','FAULT','ERROR'] and (as_timestamp(now()) - as_timestamp(s.last_reported, 0)) < 120 %}
+              {% set bt = states.sensor.solarflow_2_batt_max_temp %}
+              {% set ht = states.sensor.solarflow_2_temp %}
+              {% set have_temp = (bt is not none and is_number(bt.state)) or (ht is not none and is_number(ht.state)) %}
+              {% set t = states('sensor.solarflow_2_batt_max_temp') | float(states('sensor.solarflow_2_temp') | float(999)) %}
+              {% set temp_mode_ok_u2 = have_temp and t >= 0 and t <= 52 and not is_state('sensor.solarflow_2_heizung', 'Aktiv') %}
+              {% set soc = states('sensor.solarflow_2_battery_level')|float(100) %}
+              {% set soc_start = states('input_number.zendure_conf_soc_emerg_start')|float(15) %}
+              {% set soc_stop = states('input_number.zendure_conf_soc_emerg_stop')|float(25) %}
+              {% set ac_input = states('sensor.solarflow_2_ac_mode') == 'Input mode' %}
+              {% set grid_in = states('sensor.solarflow_2_grid_input_power')|float(0) > 50 %}
+              {{ trigger.id == 'boot_check'
+                 and fresh
+                 and is_state('input_boolean.zendure_emergency_u2', 'off')
+                 and is_state('input_boolean.zendure_calib_mode_u2', 'off')
+                 and (states('sensor.solarflow_2_cell_min_vol')|float(99) <= 2.95 or states('sensor.solarflow_total_solar_input')|float(0) < states('input_number.zendure_conf_emerg_pv_gate')|float(150))
+                 and (is_state('input_boolean.zendure_calib_discharge_u2','off') or soc <= 6 or states('sensor.solarflow_2_cell_min_vol')|float(99) <= 3.08)
+                 and (soc <= soc_start or states('sensor.solarflow_2_cell_min_vol')|float(99) <= 3.00 or (soc < soc_stop and (ac_input or grid_in)))
+                 and temp_mode_ok_u2 }}
+        then:
+          - action: input_boolean.turn_off
+            target:
+              entity_id:
+                - input_boolean.zendure_calib_discharge_u2
+                - input_boolean.zendure_calib_mode_u2
+          - action: input_boolean.turn_on
+            target: { entity_id: input_boolean.zendure_emergency_u2 }
+          - action: input_text.set_value
+            target: { entity_id: input_text.zendure_ac_mode_u2 }
+            data: { value: "Input mode" }
+          - action: script.zendure_dispatch_u2_ac_mode
+            data: { mode: "Input mode", force: true }
+          - action: script.zendure_set_u2_outputlimit_zero
+          - action: script.zendure_dispatch_u2_inputlimit
+            data: { power: "{{ limit_emerg_u2 }}", force: true }
+          - action: input_number.set_value
+            target: { entity_id: input_number.zendure_last_sent_2 }
+            data: { value: 0 }
+          - action: notify.send_message
+            target: { entity_id: !secret telegram_id1 }
+            data:
+              message: "🔋 *Zendure Notladung (Unit 2)*\nSofortstart nach HA-Neustart (kritischer Low-SoC erkannt)."
 
       - choose:
           - conditions:
