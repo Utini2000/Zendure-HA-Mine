@@ -3823,6 +3823,8 @@ automation:
 
       - condition: template
         value_template: "{{ calib1 or calib2 or dis1 or dis2 }}"
+      - condition: template
+        value_template: "{{ is_state('input_boolean.zendure_emergency_u1','off') and is_state('input_boolean.zendure_vguard_u1','off') and is_state('input_boolean.zendure_emergency_u2','off') and is_state('input_boolean.zendure_vguard_u2','off') and is_state('input_boolean.zendure_force_calib_u2','off') and is_state('input_boolean.zendure_calib_discharge_u2','off') }}"
 
       - parallel:
           # --- UNIT 1 STEUERUNG ---
