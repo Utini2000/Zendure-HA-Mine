@@ -1781,6 +1781,13 @@
 # Changes V169:
 # - Added an automation "InputLimit Cleanup After Output Mode" which checks and sets the correct Input/Output Mode after calibration
 #
+# Changes V170:
+# - Added compatibility for SolarFlow 800 Pro / Pro 2 firmware reporting temperatures
+#   as plain Kelvin values (for example 303.1 K) in addition to the existing
+#   deci-Kelvin format (for example 3031).
+# - Added BMS power plausibility filters for both units: values below 0 W or
+#   above 1200 W are marked unavailable to suppress impossible MQTT spikes.
+#
 # Beta:
 # - Implement binary_sensor.solarflow_pv_curtailment_suspected which is enabled when a surplus of sunlight pv energy that isn't being used is expected:
 #   * Auto mode is ON
